@@ -145,7 +145,13 @@ export interface ReconnectEntry {
   history_links: string[];
 }
 
-export interface Connection {
+export interface RefreshInstruction {
+  kind: "command" | "export" | "none";
+  command?: string;
+  note: string;
+}
+
+export interface ConnectionSource {
   id: string;
   source: string;
   label: string;
@@ -153,6 +159,79 @@ export interface Connection {
   last_sync_at: string | null;
   item_count: number;
   detail: string;
+  graph: { messages: number; events: number; meetings: number; records: number };
+  newest_item_at: string | null;
+  freshness_days: number | null;
+  refresh: RefreshInstruction;
+}
+
+export interface SyncEntry {
+  source: string;
+  pushed_at: string;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  detail: string;
+}
+
+export interface ConnectionsPayload {
+  summary: {
+    sources: number;
+    connected: number;
+    stale: number;
+    error: number;
+    not_configured: number;
+    items: number;
+    freshness_rule: string;
+  };
+  sources: ConnectionSource[];
+  syncs: SyncEntry[];
+}
+
+export interface GroundedOn {
+  people: number;
+  facts: number;
+  messages: number;
+  sources: number;
+  chars: number;
+  person?: { id: number; name: string };
+}
+
+export interface ChatThread {
+  id: number;
+  title: string;
+  person_id: number | null;
+  created_at: string;
+  updated_at: string;
+  message_count?: number;
+  person_name?: string | null;
+  preview?: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  thread_id: number;
+  role: "user" | "assistant";
+  content: string;
+  grounded_on: GroundedOn | Record<string, never>;
+  model: string | null;
+  created_at: string;
+}
+
+export interface ChatContextEvent {
+  thread_id: number;
+  grounded: GroundedOn;
+  people: Array<{ id: number; name: string }>;
+  person: { id: number; name: string } | null;
+  model: string;
+}
+
+export interface ChatDoneEvent {
+  thread_id: number;
+  message_id: number | null;
+  grounded_on: GroundedOn;
+  people: Array<{ id: number; name: string }>;
+  model: string;
 }
 
 export interface PersonDetail {
@@ -243,7 +322,97 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision }),
     }),
+  connections: () => request<ConnectionsPayload>("/api/connections"),
+  chatThreads: () => request<{ threads: ChatThread[] }>("/api/chat/threads"),
+  chatThread: (id: number) => request<{ thread: ChatThread; messages: ChatMessage[] }>(`/api/chat/threads/${id}`),
+  createChatThread: (personId?: number | null) =>
+    request<{ thread: ChatThread }>("/api/chat/threads", {
+      method: "POST",
+      body: JSON.stringify({ person_id: personId ?? undefined }),
+    }),
+  deleteChatThread: (id: number) => request<{ ok: boolean }>(`/api/chat/threads/${id}`, { method: "DELETE" }),
+  chatStream,
 };
+
+export interface ChatStreamHandlers {
+  onContext?: (event: ChatContextEvent) => void;
+  onDelta?: (text: string) => void;
+  onDone?: (event: ChatDoneEvent) => void;
+  onError?: (message: string) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Ask streams back Server-Sent Events: context → delta* → done | error. The
+ * plain `request()` helper reads whole responses, so this one reads the body
+ * itself. It resolves when the stream ends.
+ */
+async function chatStream(
+  body: { thread_id?: number; person_id?: number; question: string },
+  handlers: ChatStreamHandlers = {},
+): Promise<void> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: handlers.signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const text = await res.text().catch(() => "");
+    let message = `Request failed (${res.status})`;
+    try {
+      message = (JSON.parse(text) as { error?: string }).error ?? message;
+    } catch {
+      // keep the status message
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let settled = false;
+
+  const dispatch = (block: string) => {
+    let event = "message";
+    let data = "";
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data += line.slice(5).trim();
+    }
+    if (!data) return;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      return;
+    }
+
+    if (event === "context") handlers.onContext?.(parsed as ChatContextEvent);
+    else if (event === "delta") handlers.onDelta?.((parsed as { text?: string }).text ?? "");
+    else if (event === "done") {
+      settled = true;
+      handlers.onDone?.(parsed as ChatDoneEvent);
+    } else if (event === "error") {
+      settled = true;
+      handlers.onError?.((parsed as { error?: string }).error ?? "The model failed.");
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split("\n\n");
+    buffer = blocks.pop() ?? "";
+    for (const block of blocks) dispatch(block);
+  }
+  if (buffer.trim()) dispatch(buffer);
+  if (!settled) handlers.onError?.("The stream ended before the answer did. Try again.");
+}
 
 export interface Overview {
   caller: { kind: string; name: string };

@@ -23,6 +23,10 @@ and *deciding who to reach out to*.
 
 - **Today** — what needs you now: facts awaiting a decision, follow-ups that have come due, sources
   that have gone quiet, and what agents did in the last day.
+- **Ask** — a conversation with the graph. Answers **stream**, name the people and the trace they
+  came from, and carry what they were grounded on (people / facts / sources). Threads are saved;
+  open a profile and hit *Ask about them* to pin that person's record to the conversation. It reads
+  and only reads — if the record is silent, the answer says so.
 - **People** — search, filter by source or pipeline stage, and **expand a profile in place** to see
   what is known, what needs your call, and the last few things that happened. `⌘K` searches from
   anywhere.
@@ -33,9 +37,11 @@ and *deciding who to reach out to*.
   behind every value.
 - **Reconnect** — the ranked queue with the signal that put each person there; suppressed holds stay
   out unless you ask.
-- **Connections** — where the graph came from and how fresh it is. Freshness is
-  computed from the newest row in the graph, so a source that stopped producing reads
-  as *stale* with the date — a connector cannot claim otherwise.
+- **Connections** — where the graph came from and how fresh it is. Every source carries its real
+  row counts, the age of its newest row, and the exact command that refreshes it; the push log
+  underneath shows every write that ever landed. Freshness is computed from the newest row in the
+  graph, so a source that stopped producing reads *stale* with the date — a connector cannot claim
+  otherwise, and a count with no rows behind it says so.
 - **Agents** — the MCP endpoint, keys, the tool catalogue, the call log and the kill switch.
 
 ## Keeping it fresh

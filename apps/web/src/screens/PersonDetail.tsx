@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Briefcase, Link2, Mail, MessageSquare, Sparkles } from "lucide-react";
+import { Briefcase, Link2, Mail, MessageCircle, MessageSquare, Sparkles } from "lucide-react";
 import { api, type Fact, type PersonDetail as PersonDetailData, type TimelineEntry } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { errorMessage } from "../App";
@@ -47,11 +47,13 @@ export function PersonDetail({
   notify,
   onClose,
   onStageChanged,
+  onAskAbout,
 }: {
   personId: number;
   notify: Notify;
   onClose: () => void;
   onStageChanged?: () => void;
+  onAskAbout?: (personId: number) => void;
 }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [brief, setBrief] = useState<string | null>(null);
@@ -148,6 +150,15 @@ export function PersonDetail({
             ))}
           </select>
           <span style={{ flex: 1 }} />
+          {onAskAbout ? (
+            <button
+              className="button secondary"
+              title="Open Ask with this person's record pinned"
+              onClick={() => onAskAbout(personId)}
+            >
+              <MessageCircle size={13} /> Ask about them
+            </button>
+          ) : null}
           <button className="button" onClick={prep} disabled={prepping}>
             {prepping ? <span className="spinner" aria-hidden /> : <Sparkles size={13} />} Prep me
           </button>

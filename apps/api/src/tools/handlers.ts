@@ -17,11 +17,11 @@ import {
 } from "@rel/core";
 
 /** Small query helpers — kept thin so every handler reads like the SQL it runs. */
-async function all<T>(db: D1Like, sql: string, ...args: unknown[]): Promise<T[]> {
+export async function all<T>(db: D1Like, sql: string, ...args: unknown[]): Promise<T[]> {
   const res = await db.prepare(sql).bind(...args).all<T>();
   return (res.results ?? []) as T[];
 }
-async function first<T>(db: D1Like, sql: string, ...args: unknown[]): Promise<T | null> {
+export async function first<T>(db: D1Like, sql: string, ...args: unknown[]): Promise<T | null> {
   return ((await db.prepare(sql).bind(...args).first<T>()) ?? null) as T | null;
 }
 async function run(db: D1Like, sql: string, ...args: unknown[]) {
@@ -38,7 +38,7 @@ const emptyIdentifiers = (): Identifiers => ({
 });
 
 /** The grounding contract for every model-backed tool. */
-const GROUNDED_SYSTEM =
+export const GROUNDED_SYSTEM =
   "You are the chief of staff for one person's relationship graph. Answer ONLY from the record supplied in the user " +
   "message. If the record does not contain the answer, say plainly what is missing — never invent a meeting, a number, " +
   "a date, a commitment or a company. Be brief and specific: 2–5 sentences, or a few tight bullets. Refer to people by " +
@@ -134,7 +134,7 @@ async function personOr404(db: D1Like, id: number): Promise<PersonRow | null> {
   return first<PersonRow>(db, "SELECT * FROM people WHERE id = ?", id);
 }
 
-async function personDetail(db: D1Like, id: number) {
+export async function personDetail(db: D1Like, id: number) {
   const person = await personOr404(db, id);
   if (!person) return null;
 

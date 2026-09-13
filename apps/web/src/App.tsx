@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { api, ApiError, type Overview, type SessionInfo } from "./lib/api";
 import { useAsync } from "./lib/useAsync";
 import { TodayScreen } from "./screens/TodayScreen";
+import { AskScreen } from "./screens/AskScreen";
 import { PeopleScreen } from "./screens/PeopleScreen";
 import { PipelineScreen } from "./screens/PipelineScreen";
 import { ReconnectScreen } from "./screens/ReconnectScreen";
@@ -15,6 +16,7 @@ import { LoadingLine, Toast } from "./components/ui";
 
 const NAV: Array<{ id: ScreenId; label: string; group: string }> = [
   { id: "today", label: "Today", group: "Workspace" },
+  { id: "ask", label: "Ask", group: "Workspace" },
   { id: "people", label: "People", group: "Workspace" },
   { id: "pipeline", label: "Pipeline", group: "Workspace" },
   { id: "reconnect", label: "Reconnect", group: "Workspace" },
@@ -27,6 +29,7 @@ export function App() {
   const [checked, setChecked] = useState(false);
   const [screen, setScreen] = useState<ScreenId>("today");
   const [openPerson, setOpenPerson] = useState<number | null>(null);
+  const [askPerson, setAskPerson] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("rel-theme") as "light" | "dark" | null) ?? "light",
@@ -181,6 +184,14 @@ export function App() {
               onGoTo={(next) => setScreen(next)}
             />
           ) : null}
+          {screen === "ask" ? (
+            <AskScreen
+              notify={notify}
+              onOpenPerson={setOpenPerson}
+              focusPerson={askPerson}
+              onFocusConsumed={() => setAskPerson(null)}
+            />
+          ) : null}
           {screen === "people" ? (
             <PeopleScreen
               notify={notify}
@@ -202,6 +213,11 @@ export function App() {
             notify={notify}
             onClose={() => setOpenPerson(null)}
             onStageChanged={overview.reload}
+            onAskAbout={(id) => {
+              setAskPerson(id);
+              setOpenPerson(null);
+              setScreen("ask");
+            }}
           />
         ) : null}
 

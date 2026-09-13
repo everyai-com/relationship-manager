@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Columns3, Home, Plug, Repeat, Search, Users } from "lucide-react";
+import { Bot, Columns3, Home, Plug, Repeat, Search, Sparkles, Users } from "lucide-react";
 import { api, type Person } from "../lib/api";
 import { useDebounced } from "../lib/useAsync";
 import { Avatar } from "./Avatar";
 import { relativeDay } from "../lib/format";
 
-export type ScreenId = "today" | "people" | "pipeline" | "reconnect" | "connections" | "agents";
+export type ScreenId = "today" | "ask" | "people" | "pipeline" | "reconnect" | "connections" | "agents";
 
 interface Item {
   id: string;
@@ -18,6 +18,7 @@ interface Item {
 
 const NAV: Array<{ id: ScreenId; label: string; icon: React.ReactNode }> = [
   { id: "today", label: "Today", icon: <Home size={14} /> },
+  { id: "ask", label: "Ask your graph", icon: <Sparkles size={14} /> },
   { id: "people", label: "People", icon: <Users size={14} /> },
   { id: "pipeline", label: "Pipeline", icon: <Columns3 size={14} /> },
   { id: "reconnect", label: "Reconnect", icon: <Repeat size={14} /> },

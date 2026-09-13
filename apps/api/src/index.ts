@@ -1,6 +1,17 @@
 import { TOOLS, signatureLine, type AiBinding, type D1Like } from "@rel/core";
+import { DEFAULT_AI_MODEL, aiFrom } from "./ai";
 import { createAuth } from "./auth-better";
 import { agentsPaused, authenticate, currentSession, newAgentKey, sha256Hex, type Principal } from "./auth";
+import {
+  chatResponse,
+  createThread,
+  deleteThread,
+  getMessages,
+  getThread,
+  listThreads,
+  titleFrom,
+} from "./chat";
+import { connectionsPayload } from "./connections";
 import type { Env } from "./env";
 import { handleMcp } from "./mcp";
 import { callTool } from "./tools/dispatch";
@@ -19,62 +30,6 @@ function json(data: unknown, init: ResponseInit = {}): Response {
 
 const unauthorized = () =>
   json({ error: "Sign in required" }, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="relationship-manager"' } });
-
-const DEFAULT_AI_MODEL = "@cf/zai-org/glm-5.3-flash";
-
-/**
- * Workers AI, wrapped so the domain layer never sees the binding. If the binding
- * is absent the model-backed tools say so instead of failing obscurely.
- *
- * glm-5.3-flash is a *reasoning* model: it spends completion tokens on
- * `reasoning_content` before writing `content`, so the budget has to be
- * generous or the answer comes back empty. We keep thinking on — turning it off
- * makes the model leak its scratch work into the answer.
- */
-function aiFrom(env: Env): AiBinding | null {
-  const binding = env.AI;
-  if (!binding) return null;
-  const model = env.AI_MODEL && env.AI_MODEL.trim() ? env.AI_MODEL.trim() : DEFAULT_AI_MODEL;
-
-  return {
-    model,
-    run: async ({ system, user }) => {
-      const result = (await binding.run(model as never, {
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        max_tokens: 2048,
-        temperature: 0.2,
-      } as never)) as unknown;
-
-      const text = extractModelText(result).trim();
-      if (!text) {
-        throw new Error(
-          `the model (${model}) returned no answer — it may have spent its whole budget reasoning. Try again, or ask a narrower question.`,
-        );
-      }
-      return text;
-    },
-  };
-}
-
-/** Chat models return choices[].message.content; older text models return `response`. */
-function extractModelText(result: unknown): string {
-  if (typeof result === "string") return result;
-  const value = result as
-    | { response?: unknown; choices?: Array<{ message?: { content?: unknown }; text?: unknown }>; result?: { response?: unknown } }
-    | null;
-  if (!value) return "";
-  if (typeof value.response === "string") return value.response;
-  if (typeof value.result?.response === "string") return value.result.response;
-  const choice = value.choices?.[0];
-  if (choice) {
-    if (typeof choice.message?.content === "string") return choice.message.content;
-    if (typeof choice.text === "string") return choice.text;
-  }
-  return "";
-}
 
 async function readJson<T>(req: Request): Promise<T | null> {
   try {
@@ -259,6 +214,68 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
       .bind(decision, new Date().toISOString(), id)
       .run();
     return json({ ok: true, status: decision });
+  }
+
+  if (path === "/api/connections" && method === "GET") {
+    return json(await connectionsPayload(env.DB, new Date().toISOString()));
+  }
+
+  // ---- Ask: saved conversations with the graph -------------------------------
+  if (path === "/api/chat/threads" && method === "GET") {
+    return json({ threads: await listThreads(env.DB) });
+  }
+
+  if (path === "/api/chat/threads" && method === "POST") {
+    const body = await readJson<{ person_id?: number }>(req);
+    const wanted = Number(body?.person_id);
+    const personId = Number.isFinite(wanted) && wanted > 0 ? wanted : null;
+    const thread = await createThread(env.DB, new Date().toISOString(), personId);
+    return json({ thread });
+  }
+
+  if (path.startsWith("/api/chat/threads/")) {
+    const id = Number(path.slice("/api/chat/threads/".length));
+    if (!Number.isFinite(id)) return json({ error: "bad thread id" }, { status: 400 });
+
+    if (method === "GET") {
+      const thread = await getThread(env.DB, id);
+      if (!thread) return json({ error: "not found" }, { status: 404 });
+      return json({ thread, messages: await getMessages(env.DB, id) });
+    }
+    if (method === "DELETE") {
+      const removed = await deleteThread(env.DB, id);
+      if (!removed) return json({ error: "not found" }, { status: 404 });
+      return json({ ok: true });
+    }
+  }
+
+  if (path === "/api/chat" && method === "POST") {
+    const ai = aiFrom(env);
+    if (!ai) return json({ error: "Workers AI is not configured on this deployment" }, { status: 503 });
+
+    const body = await readJson<{ thread_id?: number; person_id?: number; question?: string }>(req);
+    const question = (body?.question ?? "").trim();
+    if (!question) return json({ error: "question is required" }, { status: 400 });
+    if (question.length > 2000) return json({ error: "question is too long — 2000 characters max" }, { status: 400 });
+
+    const now = new Date().toISOString();
+    const wantedPerson = Number(body?.person_id);
+    let personId = Number.isFinite(wantedPerson) && wantedPerson > 0 ? wantedPerson : null;
+
+    const wantedThread = Number(body?.thread_id);
+    let threadId = Number.isFinite(wantedThread) && wantedThread > 0 ? wantedThread : 0;
+
+    if (threadId > 0) {
+      const existing = await getThread(env.DB, threadId);
+      if (!existing) return json({ error: "thread not found" }, { status: 404 });
+      if (!personId && existing.person_id) personId = existing.person_id;
+    } else {
+      const thread = await createThread(env.DB, now, personId, titleFrom(question));
+      if (!thread.id) return json({ error: "could not start a conversation" }, { status: 500 });
+      threadId = thread.id;
+    }
+
+    return chatResponse({ db: env.DB, ai, now, threadId, personId, question });
   }
 
   // Raw source ingestion. Facts never travel this path — they go through record_fact.

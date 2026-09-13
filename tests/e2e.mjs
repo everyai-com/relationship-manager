@@ -607,6 +607,110 @@ await test("about names the maker and the graph", async () => {
   return `${out.built_by} · ${out.graph.people} people · ${out.graph.linkedin} linkedin`;
 });
 
+section("connections health");
+await test("every source carries its counts, its age and a way to refresh", async () => {
+  const response = await request("/api/connections", { cookie: sessionCookie, key: "-" });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  const body = response.json;
+  assert(body.summary?.sources > 0, "no summary");
+  assert(body.sources.length === body.summary.sources, "summary and sources disagree");
+  const summed = body.sources.reduce(
+    (total, source) =>
+      total + source.graph.messages + source.graph.events + source.graph.meetings + source.graph.records,
+    0,
+  );
+  assert(summed === body.summary.items, `items ${body.summary.items} != the rows the cards show (${summed})`);
+  for (const source of body.sources) {
+    assert(source.refresh?.note, `${source.id} has no refresh note`);
+    assert(source.graph && typeof source.graph.messages === "number", `${source.id} has no graph counts`);
+    assert(source.freshness_days === null || typeof source.freshness_days === "number", `${source.id} has no age`);
+  }
+  assert(Array.isArray(body.syncs), "the push log is not exposed");
+  return `${body.summary.sources} sources · ${body.summary.items.toLocaleString()} items · ${body.syncs.length} pushes logged`;
+});
+
+await test("a stale source cannot read as fresh", async () => {
+  const { json } = await request("/api/connections", { cookie: sessionCookie, key: "-" });
+  const stale = json.sources.filter((source) => source.status === "stale");
+  assert(stale.length > 0, "expected at least one stale source in this graph");
+  for (const source of stale) {
+    assert(
+      source.freshness_days === null || source.freshness_days > 3,
+      `${source.id} reads stale but its newest row is ${source.freshness_days} days old`,
+    );
+  }
+  const gmail = json.sources.find((source) => source.id === "gmail");
+  assert(gmail && gmail.graph.messages > 0, "gmail has no counted messages");
+  return `${stale.length} stale · gmail counted ${gmail.graph.messages} messages`;
+});
+
+section("Ask (a conversation with the graph)");
+let chatThreadId = 0;
+
+await test("a question streams a grounded answer and is saved", async () => {
+  const created = await request("/api/chat/threads", { method: "POST", body: {}, cookie: sessionCookie, key: "-" });
+  assert(created.status === 200 && created.json.thread?.id, "no thread was created");
+  chatThreadId = created.json.thread.id;
+
+  const response = await fetch(`${API}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: API, Cookie: sessionCookie },
+    body: JSON.stringify({ thread_id: chatThreadId, question: "Who should I reconnect with this week, and why?" }),
+  });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  assert(/text\/event-stream/.test(response.headers.get("content-type") ?? ""), "not an event stream");
+
+  const text = await response.text();
+  const events = [...text.matchAll(/^event: (\w+)/gm)].map((match) => match[1]);
+  assert(events.includes("context"), "no context event");
+  assert(events.includes("done"), "no done event");
+  assert(events.filter((event) => event === "delta").length >= 2, "the answer did not stream");
+
+  const done = JSON.parse(text.split("event: done\ndata: ")[1].split("\n")[0]);
+  assert(done.thread_id === chatThreadId, "done names the wrong thread");
+  assert(typeof done.grounded_on?.chars === "number", "done carries no grounding");
+
+  const answer = [...text.matchAll(/event: delta\ndata: (.+)/g)].map((match) => JSON.parse(match[1]).text).join("");
+  assert(answer.length > 40, `answer too short: ${answer.slice(0, 80)}`);
+
+  const saved = await request(`/api/chat/threads/${chatThreadId}`, { cookie: sessionCookie, key: "-" });
+  assert(saved.status === 200, `reopen returned ${saved.status}`);
+  const roles = saved.json.messages.map((message) => message.role);
+  assert(roles[0] === "user" && roles.includes("assistant"), `roles: ${roles.join(",")}`);
+  assert(saved.json.thread.title.length > 0, "the thread has no title");
+
+  return `${answer.length} chars in ${events.filter((event) => event === "delta").length} deltas · saved ${saved.json.messages.length} messages`;
+});
+
+await test("the conversation refuses to invent", async () => {
+  const created = await request("/api/chat/threads", { method: "POST", body: {}, cookie: sessionCookie, key: "-" });
+  const threadId = created.json.thread.id;
+
+  const response = await fetch(`${API}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: API, Cookie: sessionCookie },
+    body: JSON.stringify({ thread_id: threadId, question: "What is my favourite film?" }),
+  });
+  const text = await response.text();
+  const answer = [...text.matchAll(/event: delta\ndata: (.+)/g)].map((match) => JSON.parse(match[1]).text).join("");
+  assert(answer.length > 0, "no answer at all");
+  assert(
+    /no |not |unknown|doesn't|does not|can't|cannot|missing|record|nothing/i.test(answer),
+    `the model invented something: ${answer.slice(0, 160)}`,
+  );
+
+  await request(`/api/chat/threads/${threadId}`, { method: "DELETE", cookie: sessionCookie, key: "-" });
+  return `refused to invent: "${answer.slice(0, 60)}…"`;
+});
+
+await test("a conversation can be deleted", async () => {
+  const response = await request(`/api/chat/threads/${chatThreadId}`, { method: "DELETE", cookie: sessionCookie, key: "-" });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  const after = await request(`/api/chat/threads/${chatThreadId}`, { cookie: sessionCookie, key: "-" });
+  assert(after.status === 404, `the thread survived (${after.status})`);
+  return "gone, with its messages";
+});
+
 section("MCP protocol");
 await test("initialize advertises the server and its maker", async () => {
   const { json } = await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } });
