@@ -5,8 +5,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-6E56CF.svg)](./AGENTS.md)
 [![Tools](https://img.shields.io/badge/tools-17%20from%20one%20contract-6E56CF.svg)](./packages/core/src/tools.ts)
-[![Tests](https://img.shields.io/badge/e2e-74%20checks%20against%20production-2E7D32.svg)](./tests/e2e.mjs)
-[![Deploy](https://img.shields.io/badge/Cloudflare-Workers%20%2B%20D1-F38020.svg)](./wrangler.jsonc)
+[![Tests](https://img.shields.io/badge/e2e-80%20checks%20against%20production-2E7D32.svg)](./tests/e2e.mjs)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/everyai-com/relationship-manager)
 
 Your relationships are spread across Gmail, WhatsApp, your calendar and recorded calls. Every
 tool that tries to "manage" them wants you to type data in — the one thing you will never do.
@@ -37,6 +37,7 @@ that ever landed.
 
 - [What this is](#what-this-is)
 - [External apps and services](#external-apps-and-services)
+- [Deploy your own (one click)](#deploy-your-own-one-click)
 - [Quick start (self-host)](#quick-start-self-host)
 - [Connect an agent](#connect-an-agent)
 - [MCP reference](#mcp-reference)
@@ -117,6 +118,32 @@ Python standard library only — no `pip install`, nothing to rot.
 | **Better Auth** | email + password accounts; sessions in D1, HttpOnly cookies | [`apps/api/src/auth-better.ts`](./apps/api/src/auth-better.ts) |
 | **MCP clients** — Claude Code, Codex, Cursor, anything MCP | agents reading and acting on the graph through one endpoint | [`apps/api/src/mcp.ts`](./apps/api/src/mcp.ts), [`skill/`](./skill) |
 
+## Deploy your own (one click)
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/everyai-com/relationship-manager)
+
+The button clones this repository into your GitHub account, provisions the Worker, a D1 database
+and the Workers AI binding, applies the schema, and deploys the whole thing — on your account, at
+your own `*.workers.dev` URL, with Workers Builds redeploying on every push to your fork.
+
+It asks for exactly one secret: **`BETTER_AUTH_SECRET`** — signs session cookies.
+`openssl rand -hex 32`.
+
+Then, in order:
+
+1. **Open the app and create the first account.** It becomes the owner, and sign-up closes behind
+   you — a fresh deployment is one person's graph, not an open sign-up page.
+2. **Point an agent at it.** Open **Agents**, mint a key, and the Claude Code / Codex / Cursor
+   configs are printed with your URL *and* the new key already in them. Paste one, ask
+   *"who should I reconnect with this week, and why?"*.
+3. **Fill the graph** (optional): add `COMPOSIO_API_KEY` under *Settings → Variables and secrets*
+   and the **Connections** screen can sign in to Gmail, Google Calendar and Fathom — several
+   accounts each — and sync them from the cloud on demand or daily. Without it, the local
+   connectors read your own machine instead.
+
+The graph starts empty on purpose — nothing is faked, and every row that arrives carries the
+evidence it came from.
+
 ## Quick start (self-host)
 
 Runs entirely in your own Cloudflare account. One Worker, one D1 database, one AI binding —
@@ -171,8 +198,8 @@ npx wrangler dev            # the Worker + D1, on http://127.0.0.1:8787
 npm run dev                 # the UI on http://localhost:5173, proxies /api and /mcp to 8787
 ```
 
-> If you change the Worker port, change `BETTER_AUTH_URL` in `.dev.vars` to match — Better Auth
-> refuses a mismatched origin.
+> `BETTER_AUTH_URL` is optional: when it is unset the deployment uses the origin the request
+> arrived on, so a workers.dev URL — or a dev server on any port — works without configuration.
 
 ## Connect an agent
 
@@ -485,7 +512,9 @@ python3 -m rel_sync.cli all               # push everything reachable
 ### Database, migrations and seeding
 
 Migrations live in [`apps/api/migrations/`](./apps/api/migrations) (`0001_init` → `0006_source_accounts`)
-and run with `npm run db:migrate`. Seeding is optional and reads **your own** corpora from
+and run through wrangler's own tracker with `npm run db:migrate` — ordered, recorded, and safe to
+re-run. `npm run deploy` applies them first, which is how a one-click deploy initialises its own
+database. Seeding is optional and reads **your own** corpora from
 `reference/` (gitignored — a fresh clone has none), so most self-hosters skip step 5 and let the
 connectors build the graph instead.
 

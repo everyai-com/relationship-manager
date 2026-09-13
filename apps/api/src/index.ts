@@ -104,7 +104,7 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
   // ---- Better Auth owns /api/auth/* (sign-up, sign-in, sign-out, session) ---
   if (path.startsWith("/api/auth") && env.BETTER_AUTH_SECRET) {
     try {
-      return await createAuth(env).handler(req);
+      return await createAuth(env, url.origin).handler(req);
     } catch (error) {
       // A 1101 with no detail is impossible to debug from outside, so the cause
       // is logged and echoed. This deployment is private and single-owner.

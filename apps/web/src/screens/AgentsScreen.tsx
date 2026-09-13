@@ -89,18 +89,24 @@ export function AgentsScreen({ notify }: { notify: Notify }) {
 
         <CopyField title="MCP endpoint (Streamable HTTP)" value={endpoint} />
 
+        {freshKey ? (
+          <p className="conn-note" style={{ marginTop: "var(--space-2)" }}>
+            A new key was just minted, so the configs below already carry it — this is the only time it is shown.
+          </p>
+        ) : null}
+
         <div style={{ marginTop: "var(--space-4)", display: "grid", gap: "var(--space-3)" }}>
           <CopyField
             title="Claude Code"
-            value={`claude mcp add --transport http relationship-manager ${endpoint} \\\n  --header "Authorization: Bearer rel_..."`}
+            value={`claude mcp add --transport http relationship-manager ${endpoint} \\\n  --header "Authorization: Bearer ${freshKey ?? "rel_..."}"`}
           />
           <CopyField
             title="Codex (~/.codex/config.toml)"
-            value={`[mcp_servers.relationship-manager]\nurl = "${endpoint}"\nhttp_headers = { Authorization = "Bearer rel_..." }`}
+            value={`[mcp_servers.relationship-manager]\nurl = "${endpoint}"\nhttp_headers = { Authorization = "Bearer ${freshKey ?? "rel_..."}" }`}
           />
           <CopyField
             title="Cursor / any JSON MCP config"
-            value={`{\n  "mcpServers": {\n    "relationship-manager": {\n      "url": "${endpoint}",\n      "headers": { "Authorization": "Bearer rel_..." }\n    }\n  }\n}`}
+            value={`{\n  "mcpServers": {\n    "relationship-manager": {\n      "url": "${endpoint}",\n      "headers": { "Authorization": "Bearer ${freshKey ?? "rel_..."}" }\n    }\n  }\n}`}
           />
         </div>
 

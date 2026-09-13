@@ -12,9 +12,10 @@
     "dev": "npm run dev --workspace @rel/web",
     "build": "npm run build --workspace @rel/web",
     "predeploy": "npm run build",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run db:migrate && wrangler deploy",
     "db:create": "wrangler d1 create relationship-manager",
-    "db:migrate": "for f in apps/api/migrations/*.sql; do wrangler d1 execute relationship-manager --remote --file \"$f\"; done",
+    "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "seed:build": "tsx packages/seed/src/build.ts",
     "seed:push": "for f in packages/seed/out/seed-*.sql; do wrangler d1 execute relationship-manager --remote --file \"$f\"; done",
     "typecheck": "tsc -p tsconfig.base.json --noEmit && tsc -p tsconfig.node.json --noEmit",
@@ -32,5 +33,18 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "cloudflare": {
+    "bindings": {
+      "BETTER_AUTH_SECRET": {
+        "description": "Signs session cookies. Generate one with `openssl rand -hex 32`."
+      },
+      "COMPOSIO_API_KEY": {
+        "description": "Optional. Lets the Connections screen sign in to Gmail, Google Calendar and Fathom, and sync them from the cloud."
+      },
+      "ALLOWED_EMAILS": {
+        "description": "Optional. Comma-separated addresses allowed to create an account — without it, only the first account ever exists."
+      }
+    }
   }
 }

@@ -1,17 +1,21 @@
-# Local development only — copy to `.dev.vars` (gitignored).
-# In production these are Worker secrets: `npx wrangler secret put NAME`.
+# Copy to `.dev.vars` for local development (gitignored).
+#
+# This file is also what the Deploy to Cloudflare button reads: every live
+# NAME=value below is asked for as a Worker secret during a one-click deploy, so
+# it is kept to what a deployment genuinely needs. Commented lines are skipped.
 
-# Better Auth signing secret. Anything long and random:
+# Signs session cookies. Use a real random value in production:
 #   openssl rand -hex 32
 BETTER_AUTH_SECRET=local-dev-secret-change-me-0123456789abcdef
-# Must match the port `wrangler dev` listens on — the Vite dev server proxies to 8787.
-BETTER_AUTH_URL=http://127.0.0.1:8787
+
+# Optional — the deployment uses its own origin when this is unset, which is what
+# you want on a *.workers.dev URL. Set it only behind a custom domain.
+# BETTER_AUTH_URL=https://relationship-manager.example.com
+
+# Optional: lets the Connections screen sign in to Gmail / Google Calendar /
+# Fathom and pull them from the cloud. Composio dashboard → API keys.
+# COMPOSIO_API_KEY=ak_...
 
 # Optional: permit specific addresses to create an account (comma separated).
 # Without it, only the first account can ever be created.
 # ALLOWED_EMAILS=you@example.com,them@example.com
-
-# Optional: lets the Connections screen connect Gmail / Google Calendar / Fathom
-# accounts and pull them from the cloud. Composio dashboard → API keys.
-# COMPOSIO_API_KEY=ak_...
-

@@ -24,13 +24,19 @@ export async function signUpAllowed(env: Env, email: string, existingUsers: numb
   return existingUsers === 0;
 }
 
-export function createAuth(env: Env) {
+/**
+ * `origin` is the request's own origin, used when BETTER_AUTH_URL is not set —
+ * so a fresh deployment works at whatever URL it was given, without anyone
+ * having to paste that URL back in as a secret.
+ */
+export function createAuth(env: Env, origin?: string) {
   const db = new Kysely({ dialect: d1Dialect(env.DB) });
+  const baseURL = env.BETTER_AUTH_URL ?? origin ?? "http://localhost:8787";
 
   return betterAuth({
     appName: "Relationship Manager",
     secret: env.BETTER_AUTH_SECRET,
-    baseURL: env.BETTER_AUTH_URL ?? "http://localhost:8787",
+    baseURL,
     basePath: "/api/auth",
     database: { db, type: "kysely" },
     // D1 refuses the statements Better Auth's schema introspection uses
@@ -48,7 +54,7 @@ export function createAuth(env: Env) {
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
     },
-    trustedOrigins: [env.BETTER_AUTH_URL ?? "http://localhost:8787", "http://localhost:5173"],
+    trustedOrigins: [baseURL, "http://localhost:5173"],
     user: {
       changeEmail: { enabled: false },
       deleteUser: { enabled: false },

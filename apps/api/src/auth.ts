@@ -71,7 +71,7 @@ export interface SessionUser {
 export async function currentSession(req: Request, env: Env): Promise<{ user: SessionUser } | null> {
   if (!env.BETTER_AUTH_SECRET) return null;
   try {
-    const session = await createAuth(env).api.getSession({ headers: req.headers });
+    const session = await createAuth(env, new URL(req.url).origin).api.getSession({ headers: req.headers });
     if (session?.user?.email) {
       return { user: { id: session.user.id, email: session.user.email, name: session.user.name ?? "" } };
     }

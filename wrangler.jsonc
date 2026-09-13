@@ -13,7 +13,10 @@
     {
       "binding": "DB",
       "database_name": "relationship-manager",
-      "database_id": "cd9c3df4-b461-488a-8315-b324ac1d92a1"
+      "database_id": "cd9c3df4-b461-488a-8315-b324ac1d92a1",
+      // Wrangler's own migration tracking: ordered, recorded, and re-runnable.
+      // `npm run deploy` applies them, so a one-click deploy initialises itself.
+      "migrations_dir": "apps/api/migrations"
     }
   ],
   "ai": {
