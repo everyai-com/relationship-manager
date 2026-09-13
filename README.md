@@ -42,7 +42,7 @@ that ever landed.
 - [Tools (the agent surface)](#tools-the-agent-surface)
 - [The CLI](#the-cli)
 - [REST API](#rest-api)
-- [Connectors: keeping it fresh](#connectors-keeping-it-fresh)
+- [Keeping it fresh](#keeping-it-fresh)
 - [Operations](#operations)
 - [Architecture](#architecture)
 - [Repo layout](#repo-layout)
@@ -85,11 +85,14 @@ that ever landed.
   behind every value.
 - **Reconnect** — the ranked queue with the signal that put each person there; suppressed holds stay
   out unless you ask.
-- **Connections** — where the graph came from and how fresh it is. Every source carries its real
-  row counts, the age of its newest row, and the exact command that refreshes it; the push log
-  underneath shows every write that ever landed. Freshness is computed from the newest row in the
-  graph, so a source that stopped producing reads *stale* with the date — a connector cannot claim
-  otherwise, and a count with no rows behind it says so.
+- **Connections** — where the graph came from and how fresh it is, **and the accounts behind it**.
+  Sign in to Gmail, Google Calendar and Fathom from the screen — more than one account each, enabled
+  or parked independently — then **Sync now** pulls those accounts from the cloud and a daily
+  schedule keeps them fresh. Every source carries its real row counts, the age of its newest row,
+  and the exact command that refreshes it locally; the push log underneath shows every write that
+  ever landed. Freshness is computed from the newest row in the graph, so a source that stopped
+  producing reads *stale* with the date — a connector cannot claim otherwise, and a count with no
+  rows behind it says so.
 - **Agents** — the MCP endpoint, keys, the tool catalogue, the call log and the kill switch.
 
 ## Quick start (self-host)
@@ -127,6 +130,7 @@ npm run seed:build && npm run seed:push
 # 6. secrets, then deploy
 npx wrangler secret put BETTER_AUTH_SECRET     # openssl rand -hex 32
 npx wrangler secret put BETTER_AUTH_URL        # https://<your-worker>.workers.dev
+npx wrangler secret put COMPOSIO_API_KEY       # optional — lets the app connect your own accounts
 npm run build && npm run deploy
 ```
 
@@ -384,6 +388,10 @@ Alongside the tool route:
 | `GET /api/agents/calls` | the call log |
 | `GET /api/approvals`, `POST /api/approvals/:id` | approve or deny proposed outreach |
 | `GET /api/connections` | per-source freshness and the push log |
+| `GET /api/sources` | the sources you can connect, with every account and which are enabled |
+| `POST /api/sources/connect` | start a sign-in for a toolkit (`{"toolkit":"gmail"}`) → `redirect_url` |
+| `GET/POST/DELETE /api/sources/accounts/:id` | poll a sign-in, enable/default an account, disconnect it |
+| `POST /api/sources/sync` | pull every enabled account of a source (optionally `{"toolkit":"fathom"}`) |
 | `GET/POST /api/chat/*` | Ask conversations (streaming) |
 | `POST /api/sync` | connector ingestion — facts never travel this path |
 
@@ -391,10 +399,30 @@ There is no OpenAPI file; `GET /api/tools` and the Zod contract are the machine-
 See [`skill/relationship-manager/reference/tools.md`](./skill/relationship-manager/reference/tools.md)
 for every tool's arguments and return shape.
 
-## Connectors: keeping it fresh
+## Keeping it fresh
 
-The hosted app is a snapshot until something feeds it; `connectors/` is that something. It runs
-on your machine — a Worker cannot hold a Gmail session or a WhatsApp pairing.
+The hosted app is a snapshot until something feeds it. There are two paths and they land in the
+same place — the ingestion route behind `POST /api/sync`, where facts never travel.
+
+### 1. Connect accounts in the app (cloud)
+
+Set `COMPOSIO_API_KEY` as a Worker secret, then on the **Connections** screen press *Add account*
+next to Gmail, Google Calendar or Fathom and finish the sign-in in the tab Composio opens. The
+account appears as `connected` on its own line; add as many as you like — a work and a personal
+mailbox, two calendars — and enable or park each one independently. **Sync now** pulls every
+enabled account, and a daily Cron Trigger (`17 13 * * *`) does the same unattended.
+
+- **This app never sees a password.** Composio owns the OAuth flow; all that comes back is an
+  account id, and the key never leaves the Worker.
+- **Only what you enabled is pulled.** A dashboard full of abandoned connects is listed honestly —
+  and ignored until you tick it.
+- **Same ingestion, same honesty.** A cloud pull goes through the same `applySync` as the
+  connectors, so it is idempotent and it moves the same freshness numbers the screen shows.
+
+### 2. Push from this machine (local connectors)
+
+`connectors/` reads what only exists locally — the AIOS desktop app's own database (mail, calendar,
+WhatsApp), or a direct Fathom API key — and pushes it up.
 
 ```bash
 cd connectors && cp .env.example .env     # REL_API, REL_KEY, and any source keys
@@ -425,6 +453,7 @@ python3 -m rel_sync.cli all               # push everything reachable
 | `BETTER_AUTH_SECRET` | Worker secret | yes | `openssl rand -hex 32` |
 | `BETTER_AUTH_URL` | Worker secret | yes | canonical origin; must match the deployed URL |
 | `ALLOWED_EMAILS` | Worker secret | no | comma-separated; without it only the first account exists |
+| `COMPOSIO_API_KEY` | Worker secret | no | lets the app connect Gmail / Google Calendar / Fathom accounts and sync them from the cloud |
 | `REL_API` | local / connectors | yes | the deployment to talk to |
 | `REL_KEY` | local / connectors | yes | agent key — needs the `write` scope to push |
 | `FATHOM_API_KEY`, `COMPOSIO_API_KEY`, `AIOS_WORKSPACE`, `SELF_ADDRESSES` | connectors | no | see [`connectors/.env.example`](./connectors/.env.example) |
@@ -433,7 +462,7 @@ python3 -m rel_sync.cli all               # push everything reachable
 
 ### Database, migrations and seeding
 
-Migrations live in [`apps/api/migrations/`](./apps/api/migrations) (`0001_init` → `0005_chat`)
+Migrations live in [`apps/api/migrations/`](./apps/api/migrations) (`0001_init` → `0006_source_accounts`)
 and run with `npm run db:migrate`. Seeding is optional and reads **your own** corpora from
 `reference/` (gitignored — a fresh clone has none), so most self-hosters skip step 5 and let the
 connectors build the graph instead.
@@ -464,9 +493,11 @@ medium becomes a suggestion, strong is applied; a human decision freezes the fie
 value never returns), the reconnect queue's suppression rules, LinkedIn/Instagram imports
 (including that a re-import merges rather than forks), the Workers AI tools (including that the
 model says *"the record doesn't say"* instead of inventing), the MCP protocol (`tools/list` matches
-the REST catalogue exactly), and the web shell.
+the REST catalogue exactly), the ask/conversation surface (that it streams, persists and refuses to
+invent), source connections (an unknown source is refused, a sign-in starts and can be abandoned
+cleanly, an account with no rows behind it is never claimed as synced), and the web shell.
 
-Current state: **74 checks passing, 0 failing** against the production deployment. The suite is
+Current state: **80 checks passing, 0 failing** against the production deployment. The suite is
 re-runnable — it writes fresh fact values each run, so a second run tests behaviour rather than the
 first run's leftovers. It creates one clearly-labelled person (`ZZ E2E Probe`) and prints the SQL
 to remove it.

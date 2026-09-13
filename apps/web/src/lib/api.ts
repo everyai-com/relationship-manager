@@ -188,6 +188,46 @@ export interface ConnectionsPayload {
   syncs: SyncEntry[];
 }
 
+export interface SourceAccount {
+  id: number;
+  connection_id: string;
+  label: string;
+  status: string;
+  enabled: boolean;
+  is_default: boolean;
+  live: boolean;
+  synced_at: string | null;
+}
+
+export interface SourceToolkit {
+  slug: string;
+  source: string;
+  label: string;
+  reads: string;
+  accounts: SourceAccount[];
+  last_sync_at: string | null;
+}
+
+export interface SourcesPayload {
+  configured: boolean;
+  reachable: boolean;
+  error: string | null;
+  toolkits: SourceToolkit[];
+}
+
+export interface SourceSyncResult {
+  results: Array<{
+    toolkit: string;
+    account: string;
+    source: string;
+    inserted: number;
+    status: string;
+    touched: number;
+    created: number;
+  }>;
+  errors: Array<{ toolkit: string; account: string; error: string }>;
+}
+
 export interface GroundedOn {
   people: number;
   facts: number;
@@ -332,6 +372,18 @@ export const api = {
     }),
   deleteChatThread: (id: number) => request<{ ok: boolean }>(`/api/chat/threads/${id}`, { method: "DELETE" }),
   chatStream,
+  sources: () => request<SourcesPayload>("/api/sources"),
+  connectSource: (toolkit: string) =>
+    request<{ redirect_url: string | null; connection_id: string; account: SourceAccount }>("/api/sources/connect", {
+      method: "POST",
+      body: JSON.stringify({ toolkit }),
+    }),
+  sourceAccount: (id: number) => request<{ account: SourceAccount }>(`/api/sources/accounts/${id}`),
+  updateSourceAccount: (id: number, patch: { enabled?: boolean; is_default?: boolean }) =>
+    request<{ account: SourceAccount }>(`/api/sources/accounts/${id}`, { method: "POST", body: JSON.stringify(patch) }),
+  removeSourceAccount: (id: number) => request<{ ok: boolean }>(`/api/sources/accounts/${id}`, { method: "DELETE" }),
+  syncSources: (toolkit?: string) =>
+    request<SourceSyncResult>("/api/sources/sync", { method: "POST", body: JSON.stringify({ toolkit }) }),
 };
 
 export interface ChatStreamHandlers {

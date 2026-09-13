@@ -203,7 +203,7 @@ export function App() {
             <PipelineScreen notify={notify} onOpenPerson={setOpenPerson} onGoToPeople={() => setScreen("people")} />
           ) : null}
           {screen === "reconnect" ? <ReconnectScreen notify={notify} /> : null}
-          {screen === "connections" ? <ConnectionsScreen /> : null}
+          {screen === "connections" ? <ConnectionsScreen notify={notify} /> : null}
           {screen === "agents" ? <AgentsScreen notify={notify} /> : null}
         </div>
 

@@ -711,6 +711,120 @@ await test("a conversation can be deleted", async () => {
   return "gone, with its messages";
 });
 
+section("sources and accounts");
+await test("the graph lists the sources it can read, with their accounts", async () => {
+  const response = await request("/api/sources", { cookie: sessionCookie, key: "-" });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  const body = response.json;
+  assert(body.configured === true, `Composio is not configured: ${body.error}`);
+  const slugs = body.toolkits.map((toolkit) => toolkit.slug).sort().join(",");
+  assert(slugs === "fathom,gmail,googlecalendar", `unexpected toolkits: ${slugs}`);
+  for (const toolkit of body.toolkits) {
+    assert((toolkit.reads ?? "").length > 10, `${toolkit.slug} does not say what it reads`);
+    for (const account of toolkit.accounts) {
+      assert(account.connection_id.startsWith("ca_"), `${toolkit.slug} has an account without a Composio id`);
+      assert(typeof account.enabled === "boolean", `${toolkit.slug} account has no enabled flag`);
+    }
+    const defaults = toolkit.accounts.filter((account) => account.is_default).length;
+    assert(defaults <= 1, `${toolkit.slug} has ${defaults} default accounts`);
+  }
+  const fathom = body.toolkits.find((toolkit) => toolkit.slug === "fathom");
+  return `${body.toolkits.length} toolkits · ${fathom.accounts.length} fathom account(s), ${fathom.accounts.filter((account) => account.enabled).length} enabled`;
+});
+
+await test("an unknown source is refused, not guessed at", async () => {
+  const response = await request("/api/sources/connect", {
+    method: "POST",
+    body: { toolkit: "myspace" },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(response.status === 400, `expected 400, got ${response.status}`);
+  return response.json.error.slice(0, 60);
+});
+
+await test("a sign-in starts, reports pending, and can be abandoned cleanly", async () => {
+  const started = await request("/api/sources/connect", {
+    method: "POST",
+    body: { toolkit: "gmail" },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(started.status === 200, `HTTP ${started.status}: ${JSON.stringify(started.json).slice(0, 160)}`);
+  assert(/^https:\/\//.test(started.json.redirect_url ?? ""), `no sign-in url: ${started.json.redirect_url}`);
+
+  const id = started.json.account.id;
+  const polled = await request(`/api/sources/accounts/${id}`, { cookie: sessionCookie, key: "-" });
+  assert(polled.status === 200, `poll returned ${polled.status}`);
+  assert(polled.json.account.status !== "connected", "a fresh sign-in cannot already be connected");
+
+  const removed = await request(`/api/sources/accounts/${id}`, { method: "DELETE", cookie: sessionCookie, key: "-" });
+  assert(removed.status === 200, `delete returned ${removed.status}`);
+  const after = await request(`/api/sources/accounts/${id}`, { cookie: sessionCookie, key: "-" });
+  assert(after.status === 404, `the abandoned account survived (${after.status})`);
+  return "started, polled as pending, removed";
+});
+
+await test("accounts can be switched in and out without touching the source", async () => {
+  const before = await request("/api/sources", { cookie: sessionCookie, key: "-" });
+  const toolkit = before.json.toolkits.find((entry) => entry.accounts.length > 1);
+  assert(toolkit, "no toolkit has a second account to test with");
+  const target = toolkit.accounts.find((account) => !account.enabled);
+  assert(target, "every account is enabled — nothing to toggle");
+
+  const on = await request(`/api/sources/accounts/${target.id}`, {
+    method: "POST",
+    body: { enabled: true },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(on.status === 200 && on.json.account.enabled === true, "enabling did not stick");
+  const off = await request(`/api/sources/accounts/${target.id}`, {
+    method: "POST",
+    body: { enabled: false },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(off.status === 200 && off.json.account.enabled === false, "disabling did not stick");
+  return `${toolkit.label}: ${target.label || target.connection_id} on → off`;
+});
+
+await test("sync says so plainly when a source has no account", async () => {
+  const response = await request("/api/sources/sync", {
+    method: "POST",
+    body: { toolkit: "gmail" },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  assert(response.json.results.length === 0, "a pull happened with no account connected");
+  assert(
+    response.json.errors.some((entry) => /no account is connected/i.test(entry.error)),
+    `expected an honest refusal, got ${JSON.stringify(response.json.errors)}`,
+  );
+  return "refused to pretend";
+});
+
+await test("a connected account pulls the graph from the cloud", async () => {
+  const sources = await request("/api/sources", { cookie: sessionCookie, key: "-" });
+  const toolkit = sources.json.toolkits.find((entry) => entry.slug === "fathom");
+  const usable = toolkit?.accounts.find((account) => account.enabled && account.status === "connected");
+  if (!usable) return "skipped — no enabled Fathom account on this deployment";
+
+  const response = await request("/api/sources/sync", {
+    method: "POST",
+    body: { toolkit: "fathom" },
+    cookie: sessionCookie,
+    key: "-",
+  });
+  assert(response.status === 200, `HTTP ${response.status}`);
+  assert(response.json.results.length >= 1, `nothing was pulled: ${JSON.stringify(response.json.errors)}`);
+  const result = response.json.results[0];
+  assert(result.inserted > 0, "the pull reported no rows");
+  assert(["connected", "stale"].includes(result.status), `odd freshness: ${result.status}`);
+  return `${result.inserted} rows from ${result.account} · ${result.touched} people touched · ${result.status}`;
+});
+
 section("MCP protocol");
 await test("initialize advertises the server and its maker", async () => {
   const { json } = await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } });

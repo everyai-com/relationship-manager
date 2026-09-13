@@ -10,3 +10,8 @@ BETTER_AUTH_URL=http://127.0.0.1:8787
 # Optional: permit specific addresses to create an account (comma separated).
 # Without it, only the first account can ever be created.
 # ALLOWED_EMAILS=you@example.com,them@example.com
+
+# Optional: lets the Connections screen connect Gmail / Google Calendar / Fathom
+# accounts and pull them from the cloud. Composio dashboard → API keys.
+# COMPOSIO_API_KEY=ak_...
+

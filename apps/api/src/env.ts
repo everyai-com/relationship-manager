@@ -3,6 +3,8 @@ export interface Env {
   ASSETS: Fetcher;
   AI?: Ai;
   AI_MODEL?: string;
+  /** Composio: connect accounts and pull Gmail / Google Calendar / Fathom from the cloud. */
+  COMPOSIO_API_KEY?: string;
   /** Better Auth: the signing secret and the canonical origin. */
   BETTER_AUTH_SECRET?: string;
   BETTER_AUTH_URL?: string;
