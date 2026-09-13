@@ -77,6 +77,20 @@ a strong evidence kind.
 | `log_outreach` | write | `person_id`, `channel`, `body`, `followup_at?` | records; does not send |
 | `propose_outreach` | write | `person_id`, `channel`, `subject?`, `body` | queued for approval |
 
+## Freshness and syncing
+
+Sources are refreshed from the user's own machine (`connectors/`), not from inside the Worker —
+a Worker cannot hold a Gmail session or a WhatsApp pairing. Two consequences you must respect:
+
+- `connection_status` is computed from the newest row in the graph. If a source is `stale`, say so
+  and quote the date; never describe stale data as current.
+- A source being `stale` is normal, not an error. It means nothing has been pushed since the date
+  shown. Suggest running `rel-sync` rather than guessing.
+
+Re-pushing is idempotent: only genuinely new messages change counts and last-touch. If you see a
+person's history look thin, the answer is usually "that source has not been synced", not "the
+graph is broken".
+
 ## Social sources
 
 LinkedIn has no API for a personal account's own connections, and Instagram's Graph API is

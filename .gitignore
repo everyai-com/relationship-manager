@@ -2,6 +2,10 @@
 node_modules/
 .npm/
 
+# connectors
+connectors/.env
+connectors/.state.json
+
 # secrets — never commit
 .dev.vars
 .env

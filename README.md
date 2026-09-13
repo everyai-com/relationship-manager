@@ -33,8 +33,27 @@ and *deciding who to reach out to*.
   behind every value.
 - **Reconnect** — the ranked queue with the signal that put each person there; suppressed holds stay
   out unless you ask.
-- **Connections** — where the graph came from and how fresh it is.
+- **Connections** — where the graph came from and how fresh it is. Freshness is
+  computed from the newest row in the graph, so a source that stopped producing reads
+  as *stale* with the date — a connector cannot claim otherwise.
 - **Agents** — the MCP endpoint, keys, the tool catalogue, the call log and the kill switch.
+
+## Keeping it fresh
+
+The hosted app is a snapshot until something feeds it; `connectors/` is that something.
+
+```bash
+cd connectors && cp .env.example .env     # REL_API, REL_KEY, and any source keys
+python3 -m rel_sync.cli status            # what is connected, and what is missing
+python3 -m rel_sync.cli all               # push everything reachable
+```
+
+- **aios** — reads the AIOS desktop app's own database on this machine (mail, calendar,
+  WhatsApp). Works with no new credentials.
+- **fathom / gmail / calendar** — live through Composio, or Fathom directly with an API key.
+- Pushes are idempotent: only genuinely new messages move counts and last-touch, so
+  re-running an unchanged mailbox changes nothing.
+- Standard library only — no `pip install`, nothing to rot. See `connectors/README.md`.
 
 ## What it does
 

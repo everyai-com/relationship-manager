@@ -662,6 +662,85 @@ await test("an unknown path falls through to the SPA", async () => {
   assert(response.status === 200, `status ${response.status}`);
 });
 
+section("live sync (the connectors' path)");
+const syncAddress = `rel-sync-probe-${Date.now().toString(36)}@example.com`;
+const syncMessage = {
+  id: `sync-${Date.now()}`,
+  service: "e2e-sync",   // its own namespace: a test must not make a real source look fresh
+  thread_id: "thread-sync",
+  from_addr: syncAddress,
+  to_addr: "tradephani@gmail.com",
+  subject: "E2E sync probe",
+  snippet: "hello",
+  labels: "",
+  is_unread: 0,
+  last_from_user: 0,
+  internal_date: new Date().toISOString(),
+};
+
+await test("a pushed message creates the person it came from", async () => {
+  const response = await request("/api/sync", {
+    method: "POST",
+    key: writeKey,
+    body: {
+      source: "e2e-sync",
+      label: "E2E sync",
+      messages: [syncMessage],
+      self_addresses: ["tradephani@gmail.com"],
+    },
+  });
+  assert(response.status === 200, `sync returned ${response.status} ${response.text.slice(0, 120)}`);
+  assert(response.json.inserted >= 1, `nothing inserted: ${JSON.stringify(response.json)}`);
+  assert(response.json.created >= 1, "the sender was not created as a person");
+
+  const found = await toolOk("search_people", { query: syncAddress, limit: 5 });
+  const person = found.people.find((p) => (p.identifiers?.emails ?? []).includes(syncAddress));
+  assert(person, "the sender is not in the graph");
+  return `${person.name || person.email} created from one message`;
+});
+
+await test("pushing the same message again changes nothing", async () => {
+  const before = await toolOk("search_people", { query: syncAddress, limit: 1 });
+  const response = await request("/api/sync", {
+    method: "POST",
+    key: writeKey,
+    body: { source: "e2e-sync", label: "E2E sync", messages: [syncMessage], self_addresses: ["tradephani@gmail.com"] },
+  });
+  assert(response.json.inserted === 0 || response.json.created === 0, "a duplicate message created a person again");
+  const after = await toolOk("search_people", { query: syncAddress, limit: 1 });
+  assert(after.people[0].message_count === before.people[0].message_count, "message_count inflated on re-push");
+  return `count held at ${after.people[0].message_count}`;
+});
+
+await test("meeting attendees become people too", async () => {
+  const attendee = `rel-sync-meeting-${Date.now().toString(36)}@example.com`;
+  const response = await request("/api/sync", {
+    method: "POST",
+    key: writeKey,
+    body: {
+      source: "e2e-meetings",
+      label: "E2E meetings",
+      meetings: [
+        {
+          id: `fathom_e2e_${Date.now()}`,
+          title: "E2E recorded call",
+          endedAt: new Date().toISOString(),
+          attendees: [attendee, "tradephani@gmail.com"],
+          summary: "",
+          actionItems: [],
+          url: "",
+        },
+      ],
+      self_addresses: ["tradephani@gmail.com"],
+    },
+  });
+  assert(response.status === 200, `sync returned ${response.status}`);
+  const found = await toolOk("search_people", { query: attendee, limit: 5 });
+  assert(found.people.length > 0, "the attendee was not created");
+  assert(found.people[0].meeting_count >= 1, "their meeting_count was not bumped");
+  return `${found.people[0].meeting_count} meeting recorded`;
+});
+
 section("cleanup");
 await test("test keys are revoked", async () => {
   for (const id of [readKeyId, writeKeyId]) {

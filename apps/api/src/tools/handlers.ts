@@ -314,62 +314,6 @@ async function recordFactCore(
   };
 }
 
-/** Find a person by any of their handles, or make one. */
-async function resolveOrCreatePerson(
-  db: D1Like,
-  now: string,
-  candidates: Array<{ kind: IdentifierKind; value: string }>,
-  fallback: { name?: string; email?: string },
-): Promise<{ personId: number; created: boolean; linked: number }> {
-  let personId: number | null = null;
-  for (const candidate of candidates) {
-    if (!candidate.value) continue;
-    const row = await first<{ person_id: number }>(
-      db,
-      "SELECT person_id FROM person_identifiers WHERE kind = ? AND value = ?",
-      candidate.kind,
-      candidate.value,
-    );
-    if (row) {
-      personId = row.person_id;
-      break;
-    }
-  }
-
-  const created = personId === null;
-  if (personId === null) {
-    const email = fallback.email ?? "";
-    const result = await run(
-      db,
-      `INSERT INTO people (email, name, company_domain, created_at, updated_at) VALUES (?, ?, '', ?, ?)`,
-      email,
-      fallback.name ?? "",
-      now,
-      now,
-    );
-    personId = Number((result.meta as { last_row_id?: number } | undefined)?.last_row_id ?? 0);
-    if (!personId) {
-      const row = await first<{ id: number }>(db, "SELECT id FROM people ORDER BY id DESC LIMIT 1");
-      personId = row?.id ?? 0;
-    }
-  }
-
-  let linked = 0;
-  for (const candidate of candidates) {
-    if (!candidate.value) continue;
-    const res = await run(
-      db,
-      "INSERT OR IGNORE INTO person_identifiers (person_id, kind, value, created_at) VALUES (?, ?, ?, ?)",
-      personId,
-      candidate.kind,
-      candidate.value,
-      now,
-    );
-    linked += Number((res.meta as { changes?: number } | undefined)?.changes ?? 0);
-  }
-  return { personId, created, linked };
-}
-
 export const handlers: ToolHandlers = {
   async search_people(ctx, args) {
     const query = String(args.query ?? "").trim();
