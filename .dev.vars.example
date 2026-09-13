@@ -4,7 +4,8 @@
 # Better Auth signing secret. Anything long and random:
 #   openssl rand -hex 32
 BETTER_AUTH_SECRET=local-dev-secret-change-me-0123456789abcdef
-BETTER_AUTH_URL=http://127.0.0.1:8799
+# Must match the port `wrangler dev` listens on — the Vite dev server proxies to 8787.
+BETTER_AUTH_URL=http://127.0.0.1:8787
 
 # Optional: permit specific addresses to create an account (comma separated).
 # Without it, only the first account can ever be created.
