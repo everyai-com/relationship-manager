@@ -383,7 +383,7 @@ Alongside the tool route:
 | `GET/POST /api/agents`, `POST /api/agents/:id/revoke`, `POST /api/agents/0/pause` | keys, revocation, kill switch |
 | `GET /api/agents/calls` | the call log |
 | `GET /api/approvals`, `POST /api/approvals/:id` | approve or deny proposed outreach |
-| `GET /api/connections`, `GET/POST /api/sources/*` | source freshness and connected accounts |
+| `GET /api/connections` | per-source freshness and the push log |
 | `GET/POST /api/chat/*` | Ask conversations (streaming) |
 | `POST /api/sync` | connector ingestion — facts never travel this path |
 
@@ -425,7 +425,6 @@ python3 -m rel_sync.cli all               # push everything reachable
 | `BETTER_AUTH_SECRET` | Worker secret | yes | `openssl rand -hex 32` |
 | `BETTER_AUTH_URL` | Worker secret | yes | canonical origin; must match the deployed URL |
 | `ALLOWED_EMAILS` | Worker secret | no | comma-separated; without it only the first account exists |
-| `COMPOSIO_API_KEY` | Worker secret | no | live Fathom / Gmail / Calendar pulls |
 | `REL_API` | local / connectors | yes | the deployment to talk to |
 | `REL_KEY` | local / connectors | yes | agent key — needs the `write` scope to push |
 | `FATHOM_API_KEY`, `COMPOSIO_API_KEY`, `AIOS_WORKSPACE`, `SELF_ADDRESSES` | connectors | no | see [`connectors/.env.example`](./connectors/.env.example) |
@@ -434,7 +433,7 @@ python3 -m rel_sync.cli all               # push everything reachable
 
 ### Database, migrations and seeding
 
-Migrations live in [`apps/api/migrations/`](./apps/api/migrations) (`0001_init` → `0006_source_accounts`)
+Migrations live in [`apps/api/migrations/`](./apps/api/migrations) (`0001_init` → `0005_chat`)
 and run with `npm run db:migrate`. Seeding is optional and reads **your own** corpora from
 `reference/` (gitignored — a fresh clone has none), so most self-hosters skip step 5 and let the
 connectors build the graph instead.
@@ -447,13 +446,8 @@ npm run seed:push         # chunked to stay inside D1 request limits
 ```
 
 The seed **replaces** graph tables (`people`, `messages`, `events`, `meetings`, `person_facts`,
-`connections`, `reconnect`) and leaves runtime tables alone — keys, the call log, approvals,
-chat threads and connected accounts survive a re-seed.
-
-### Scheduled sync
-
-`wrangler.jsonc` registers a daily cron (`17 13 * * *`, ~06:00 Pacific) that refreshes connected
-accounts through `sourceSync`. Change or remove it there.
+`connections`, `reconnect`) and deliberately leaves runtime tables alone — agent keys, the call
+log, approvals and outreach survive a re-seed.
 
 ### Testing
 

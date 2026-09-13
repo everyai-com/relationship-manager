@@ -10,6 +10,9 @@ connectors/.state.json
 .dev.vars
 .env
 .env.*
+# ...but the templates are meant to be cloned
+!.env.example
+!*/.env.example
 ACCESS.txt
 *.pem
 .wrangler/
