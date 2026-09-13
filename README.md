@@ -36,6 +36,7 @@ that ever landed.
 ## Contents
 
 - [What this is](#what-this-is)
+- [External apps and services](#external-apps-and-services)
 - [Quick start (self-host)](#quick-start-self-host)
 - [Connect an agent](#connect-an-agent)
 - [MCP reference](#mcp-reference)
@@ -94,6 +95,27 @@ that ever landed.
   producing reads *stale* with the date — a connector cannot claim otherwise, and a count with no
   rows behind it says so.
 - **Agents** — the MCP endpoint, keys, the tool catalogue, the call log and the kill switch.
+
+## External apps and services
+
+Everything this project leans on, and what it is there for. Nothing else is required to run it:
+the UI ships with no runtime dependencies beyond React and `lucide-react`, and the connectors are
+Python standard library only — no `pip install`, nothing to rot.
+
+| Service | Used for | Where |
+|---|---|---|
+| **Cloudflare Workers** | the API, the MCP endpoint and the UI, in one Worker | [`wrangler.jsonc`](./wrangler.jsonc), [`apps/api`](./apps/api) |
+| **Cloudflare D1** | the relationship graph, accounts, sessions, chat threads | [`apps/api/migrations/`](./apps/api/migrations) |
+| **Cloudflare Workers AI** — `@cf/zai-org/glm-5.3-flash` | grounded answers for **Ask**, `ask_about_person`, `daily_brief` | [`apps/api/src/ai.ts`](./apps/api/src/ai.ts) |
+| **Cloudflare Cron Triggers** | the daily refresh of connected accounts (`17 13 * * *`) | [`apps/api/src/index.ts`](./apps/api/src/index.ts) `scheduled()` |
+| **Composio** | connecting Gmail / Google Calendar / Fathom accounts (OAuth), and pulling them from the cloud | [`apps/api/src/composio.ts`](./apps/api/src/composio.ts), [`connectors/`](./connectors) |
+| **Fathom** | recorded calls — attendees, summaries, action items (via Composio or its own API) | `connectors/rel_sync/providers/fathom.py` |
+| **Gmail, Google Calendar** | messages and events, read through Composio or the local AIOS workspace | [`apps/api/src/composio.ts`](./apps/api/src/composio.ts), `connectors/rel_sync/providers/aios.py` |
+| **WhatsApp** | conversation rows, read from the AIOS desktop app's own database — there is no API for a personal account | `connectors/rel_sync/providers/aios.py` |
+| **AIOS desktop app** | the local corpus the connectors read when you would rather not connect a mailbox | `connectors/rel_sync/providers/aios.py` |
+| **LinkedIn + Instagram official exports** | connections, invitations and DMs — the only legitimate path, never scraping | `rel import-linkedin`, `rel import-instagram` |
+| **Better Auth** | email + password accounts; sessions in D1, HttpOnly cookies | [`apps/api/src/auth-better.ts`](./apps/api/src/auth-better.ts) |
+| **MCP clients** — Claude Code, Codex, Cursor, anything MCP | agents reading and acting on the graph through one endpoint | [`apps/api/src/mcp.ts`](./apps/api/src/mcp.ts), [`skill/`](./skill) |
 
 ## Quick start (self-host)
 
