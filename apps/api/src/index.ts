@@ -376,7 +376,9 @@ async function overview(env: Env, principal: Principal): Promise<Response> {
     .all();
 
   const stale = await db
-    .prepare("SELECT id, source, label, status, last_sync_at, item_count FROM connections WHERE status <> 'connected' ORDER BY source")
+    .prepare(
+      "SELECT id, source, label, status, last_sync_at, item_count FROM connections WHERE status IN ('stale', 'error') ORDER BY source",
+    )
     .all();
 
   const calls = await db

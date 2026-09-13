@@ -84,7 +84,7 @@ export function App() {
           <span>
             <span className="brand-name">Relationship Manager</span>
             <br />
-            <span className="brand-sub">{session.app ?? ""}</span>
+            <span className="brand-sub">{session.kind === "agent" ? session.name : "your graph, agent-ready"}</span>
           </span>
         </div>
 

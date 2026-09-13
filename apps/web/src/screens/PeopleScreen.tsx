@@ -60,22 +60,28 @@ export function PeopleScreen({ notify }: { notify: Notify }) {
           />
         ) : (
           <ul className="list">
-            {rows.map((person) => (
-              <li key={person.id}>
-                <button className="row" onClick={() => setOpenId(person.id)}>
-                  <div className="row-main">
-                    <div className="row-title">{person.name || person.email}</div>
-                    <div className="row-meta">
-                      {[person.title, person.company || person.company_domain].filter(Boolean).join(" · ") || person.email}
+            {rows.map((person) => {
+              const label = person.name || person.email;
+              const company = [person.title, person.company || person.company_domain].filter(Boolean).join(" · ");
+              // With no name on file the address is the title, so the second line
+              // carries what we do know rather than repeating it.
+              const meta =
+                company || (person.name ? person.email : `${person.message_count} messages · ${person.meeting_count} meetings`);
+              return (
+                <li key={person.id}>
+                  <button className="row" onClick={() => setOpenId(person.id)}>
+                    <div className="row-main">
+                      <div className="row-title">{label}</div>
+                      <div className="row-meta">{meta}</div>
                     </div>
-                  </div>
-                  <div className="row-side">
-                    {person.proposed_count ? <span className="pill accent">{person.proposed_count} to review</span> : null}
-                    <span className="row-time">{relativeDay(person.last_touch)}</span>
-                  </div>
-                </button>
-              </li>
-            ))}
+                    <div className="row-side">
+                      {person.proposed_count ? <span className="pill accent">{person.proposed_count} to review</span> : null}
+                      <span className="row-time">{relativeDay(person.last_touch)}</span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </Surface>
