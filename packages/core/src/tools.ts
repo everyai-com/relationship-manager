@@ -17,7 +17,9 @@ const PERSON_ID = z.number().int().positive().describe("Person id from search_pe
 
 /**
  * The stages a person can sit in. Deliberately the same vocabulary as the CRM
- * this graph inherited, so the stages that came across mean something.
+ * this graph inherited, so the stages that came across mean something —
+ * including "Excluded", which the import used for its deliberate holds. It is a
+ * stage here; the hard do-not-contact flag lives on the reconnect row.
  */
 export const PIPELINE_STAGES = [
   "Needs review",
@@ -29,6 +31,7 @@ export const PIPELINE_STAGES = [
   "Won",
   "On hold",
   "Closed",
+  "Excluded",
 ] as const;
 
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];

@@ -12,6 +12,8 @@ import { day, hostOf, relativeDay, titleCase } from "../lib/format";
 type Notify = (message: string, tone?: "ok" | "error") => void;
 type Tab = "overview" | "history" | "brief";
 
+// Kept in step with PIPELINE_STAGES in packages/core — a select that offers a
+// stage the API refuses is a dead end the user only finds by clicking it.
 const STAGES = [
   "",
   "Needs review",

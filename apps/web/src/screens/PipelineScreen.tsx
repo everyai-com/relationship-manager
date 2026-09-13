@@ -15,7 +15,15 @@ type Notify = (message: string, tone?: "ok" | "error") => void;
  * write fails — a board that lies about where someone is would be worse than
  * no board.
  */
-export function PipelineScreen({ notify, onOpenPerson }: { notify: Notify; onOpenPerson: (id: number) => void }) {
+export function PipelineScreen({
+  notify,
+  onOpenPerson,
+  onGoToPeople,
+}: {
+  notify: Notify;
+  onOpenPerson: (id: number) => void;
+  onGoToPeople: () => void;
+}) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query, 220);
   const [board, setBoard] = useState<Board | null>(null);
@@ -112,7 +120,7 @@ export function PipelineScreen({ notify, onOpenPerson }: { notify: Notify; onOpe
               title="The pipeline is empty"
               body="Open someone in People and choose a stage — they will appear here, and you can drag them along as things move."
               action={
-                <button className="button" onClick={() => onOpenPerson(0)}>
+                <button className="button" onClick={onGoToPeople}>
                   Go to People
                 </button>
               }
