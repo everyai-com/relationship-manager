@@ -6,7 +6,7 @@ import { PeopleScreen } from "./screens/PeopleScreen";
 import { ReconnectScreen } from "./screens/ReconnectScreen";
 import { ConnectionsScreen } from "./screens/ConnectionsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";
-import { LoginScreen } from "./screens/LoginScreen";
+import { AuthScreen } from "./screens/AuthScreen";
 import { LoadingLine, Toast } from "./components/ui";
 
 type Screen = "today" | "people" | "reconnect" | "connections" | "agents";
@@ -65,7 +65,7 @@ export function App() {
 
   if (!session?.authed) {
     return (
-      <LoginScreen
+      <AuthScreen
         configured={session?.configured ?? true}
         onSignedIn={() => {
           api.session().then(setSession).catch(() => undefined);
@@ -111,7 +111,7 @@ export function App() {
           <button
             className="nav-item"
             onClick={() => {
-              api.logout().finally(() => {
+              api.signOut().finally(() => {
                 window.location.reload();
               });
             }}
@@ -136,8 +136,8 @@ export function App() {
                 {overview.data.stale.length === 1 ? "" : "s"} stale
               </span>
             ) : null}
-            <span className="pill" title="Signed in">
-              {session.kind === "agent" ? `agent · ${session.name}` : "you"}
+            <span className="pill" title={session.account?.email ?? "Signed in"}>
+              {session.kind === "agent" ? `agent · ${session.name}` : (session.account?.email ?? "you")}
             </span>
           </div>
         </div>

@@ -7,6 +7,8 @@ export interface SessionInfo {
   app: string;
   signature?: string;
   model?: string | null;
+  account?: { email: string; name: string } | null;
+  signupOpen?: boolean;
 }
 
 export interface ToolMeta {
@@ -169,11 +171,24 @@ async function tool<T>(name: string, args: Record<string, unknown> = {}): Promis
   return res.result;
 }
 
+/** Better Auth's REST surface: it owns the session cookie, we just call it. */
+async function authPost(path: string, body: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+  if (!res.ok) throw new ApiError(data?.message ?? data?.error ?? `Sign-in failed (${res.status})`, res.status);
+  return data;
+}
+
 export const api = {
   session: () => request<SessionInfo>("/api/session"),
-  login: (password: string) =>
-    request<{ ok: boolean }>("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
-  logout: () => request<{ ok: boolean }>("/api/logout", { method: "POST" }),
+  signIn: (email: string, password: string) => authPost("/api/auth/sign-in/email", { email, password }),
+  signUp: (email: string, password: string, name: string) => authPost("/api/auth/sign-up/email", { email, password, name }),
+  signOut: () => authPost("/api/auth/sign-out", {}),
   overview: () => request<Overview>("/api/overview"),
   tool,
   catalog: () => request<{ tools: ToolCatalogEntry[] }>("/api/tools"),

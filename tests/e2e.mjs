@@ -12,6 +12,7 @@
 const API = (process.env.REL_API ?? "").replace(/\/+$/, "");
 const KEY = process.env.REL_KEY ?? "";
 const PASSWORD = process.env.REL_PASSWORD ?? "";
+const EMAIL = process.env.REL_EMAIL ?? "";
 
 if (!API) {
   console.error("REL_API is required (e.g. REL_API=https://your-worker.workers.dev)");
@@ -45,6 +46,10 @@ async function request(path, { method = "GET", body, key = KEY, cookie, headers 
     method,
     headers: {
       "Content-Type": "application/json",
+      // Better Auth rejects a browser-shaped request (undici sends Sec-Fetch-*)
+      // that carries no Origin — that is its CSRF guard doing its job. Real
+      // browsers always send this, so the test sends it too.
+      Origin: API,
       ...(key && key !== "-" ? { Authorization: `Bearer ${key}` } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
       ...headers,
@@ -96,34 +101,57 @@ await test("unauthenticated tool call is refused", async () => {
   return "401 with WWW-Authenticate";
 });
 
-await test("wrong password is rejected", async () => {
-  const response = await request("/api/login", { method: "POST", body: { password: "definitely-not-it" }, key: "-" });
-  assert(response.status === 401, `expected 401, got ${response.status}`);
+await test("an unknown account cannot sign in", async () => {
+  const response = await request("/api/auth/sign-in/email", {
+    method: "POST",
+    body: { email: "nobody-here@example.com", password: "correct-horse-battery" },
+    key: "-",
+  });
+  assert(response.status >= 400, `expected a rejection, got ${response.status}`);
+  return `${response.status} ${response.json?.message ?? ""}`.trim();
 });
 
-await test("correct password issues a session", async () => {
-  assert(PASSWORD, "REL_PASSWORD not set — skipping is not allowed, pass it");
-  const response = await request("/api/login", { method: "POST", body: { password: PASSWORD }, key: "-" });
-  assert(response.status === 200, `expected 200, got ${response.status}`);
+await test("a wrong password is rejected", async () => {
+  assert(EMAIL, "REL_EMAIL not set");
+  const response = await request("/api/auth/sign-in/email", { method: "POST", body: { email: EMAIL, password: "definitely-not-it" }, key: "-" });
+  assert(response.status >= 400, `expected a rejection, got ${response.status}`);
+  return "rejected";
+});
+
+await test("real credentials issue a session cookie", async () => {
+  assert(EMAIL && PASSWORD, "REL_EMAIL / REL_PASSWORD not set");
+  const response = await request("/api/auth/sign-in/email", { method: "POST", body: { email: EMAIL, password: PASSWORD }, key: "-" });
+  assert(response.status === 200, `expected 200, got ${response.status} ${response.text.slice(0, 120)}`);
   const cookie = response.headers.get("set-cookie") ?? "";
-  assert(cookie.includes("rel_session="), "no session cookie");
-  assert(cookie.includes("HttpOnly"), "cookie is not HttpOnly");
+  assert(/session_token=/.test(cookie), `no session cookie in: ${cookie.slice(0, 120)}`);
+  assert(/HttpOnly/i.test(cookie), "cookie is not HttpOnly");
   sessionCookie = cookie.split(";")[0];
   return "HttpOnly session cookie";
 });
 
-await test("session endpoint reports the caller and the signature", async () => {
+await test("the session names the account and the build", async () => {
   const response = await request("/api/session", { cookie: sessionCookie, key: "-" });
   const body = response.json;
   assert(body.authed === true, "not authed");
   assert(body.kind === "human", `kind=${body.kind}`);
+  assert(body.account?.email === EMAIL, `account ${body.account?.email} != ${EMAIL}`);
   assert((body.signature ?? "").includes("Saphaare Labs"), "signature missing");
-  return body.signature;
+  return `${body.account.email} · ${body.signature.split(" · ")[0]}`;
 });
 
-await test("session cannot be forged", async () => {
-  const response = await request("/api/session", { cookie: "rel_session=9999999999999.deadbeef", key: "-" });
+await test("a forged session cookie is not accepted", async () => {
+  const response = await request("/api/session", { cookie: "better-auth.session_token=totally-made-up.value", key: "-" });
   assert(response.json.authed === false, "a forged cookie was accepted");
+});
+
+await test("sign-up is closed to strangers", async () => {
+  const response = await request("/api/auth/sign-up/email", {
+    method: "POST",
+    body: { email: `stranger-${Date.now()}@example.com`, password: "a-long-enough-password", name: "Stranger" },
+    key: "-",
+  });
+  assert(response.status >= 400, `anyone can create an account (status ${response.status})`);
+  return `${response.status} ${response.json?.message?.slice(0, 60) ?? ""}`.trim();
 });
 
 section("agent keys and scopes");
@@ -595,6 +623,17 @@ await test("test keys are revoked", async () => {
   const list = await request("/api/agents", { cookie: sessionCookie, key: "-" });
   const live = list.json.keys.filter((k) => !k.revoked_at);
   return `${live.length} key(s) still active: ${live.map((k) => k.name).join(", ") || "none"}`;
+});
+
+// Last, because it kills the session the tests above need.
+await test("signing out invalidates the session", async () => {
+  const before = await request("/api/session", { cookie: sessionCookie, key: "-" });
+  assert(before.json.authed === true, "not signed in to begin with");
+  const out = await request("/api/auth/sign-out", { method: "POST", body: {}, cookie: sessionCookie, key: "-" });
+  assert(out.status === 200, `sign-out returned ${out.status}`);
+  const after = await request("/api/session", { cookie: sessionCookie, key: "-" });
+  assert(after.json.authed === false, "the session still works after signing out");
+  return "session cleared";
 });
 
 // ---------------------------------------------------------------------------

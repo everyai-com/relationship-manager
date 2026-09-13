@@ -7,6 +7,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.0",
     "@rel/core": "*",
+    "better-auth": "^1.7.4",
+    "kysely": "^0.29.5",
+    "kysely-d1": "^0.4.0",
     "zod": "^3.23.8"
   }
 }

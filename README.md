@@ -133,24 +133,47 @@ connectors/         (phase 2) local Python ingest → POST /api/sync
 
 ```bash
 npm install
-cp .dev.vars.example .dev.vars     # LOGIN_PASSWORD, SESSION_SECRET
+cp .dev.vars.example .dev.vars     # BETTER_AUTH_SECRET, BETTER_AUTH_URL
 
 # build + seed + deploy
 npm run build
 npm run seed:build                 # reads reference/ → packages/seed/out/seed.sql
 npx wrangler d1 create relationship-manager   # paste database_id into wrangler.jsonc
-npm run db:migrate && npm run seed:push
-npx wrangler secret put LOGIN_PASSWORD
-npx wrangler secret put SESSION_SECRET
+npm run db:migrate                 # schema + socials + auth tables
+npm run seed:push
+npx wrangler secret put BETTER_AUTH_SECRET     # openssl rand -hex 32
+npx wrangler secret put BETTER_AUTH_URL        # your worker URL
 npm run deploy
+```
+
+Then open the app and create the first account — it becomes the owner. After that, sign-up is
+closed unless you set `ALLOWED_EMAILS` (a comma-separated list) as a var:
+
+```bash
+# optional: let a teammate in
+npx wrangler secret put ALLOWED_EMAILS   # "you@example.com, them@example.com"
 ```
 
 Local development (UI against the real API):
 
 ```bash
 npm run dev                        # Vite dev server, proxies /api → wrangler dev
-npx wrangler dev                   # the API on :8787
+npx wrangler dev --port 8799       # the API (pick a free port; 8787 is popular)
 ```
+
+## Accounts
+
+[Better Auth](https://better-auth.com) on Cloudflare: email + password, sessions in D1, HttpOnly
+cookies, no third party in the loop.
+
+- **The first account becomes the owner.** Sign-up then closes — this graph is someone's private
+  relationships, and an open sign-up form is a data leak with a nice UI. Add `ALLOWED_EMAILS`
+  (comma-separated) to let specific other people in.
+- **Humans and agents are different principals.** A human session can do everything; an agent key
+  carries explicit scopes, is revocable, and every call is logged. Agents never touch the session
+  table.
+- Sessions last 30 days and refresh daily. Signing out invalidates the session server-side, and
+  the test suite proves it.
 
 ## Testing
 
@@ -192,14 +215,16 @@ Then ask: *"who should I reconnect with this week, and why?"* — the agent call
 
 ## Safety
 
+- **Accounts, not a shared password.** Better Auth sessions in D1; the first account is the owner
+  and sign-up closes after that. The session cookie is HttpOnly and signing out kills it
+  server-side.
 - Reads by default. Writes are opt-in per agent key (`scopes: read|write`), validated server-side
   in one place, and logged.
 - Facts need evidence. `score_evidence()` decides the band; below `POSSIBLE` nothing is stored.
 - No sending. Agents can draft and propose; a human approves. Outreach is logged, never fired.
 - **Your data never enters this repo.** The graph lives in your own Cloudflare D1 database and in
   local files (`reference/`, the generated `packages/seed/out/`) — all gitignored. The repository
-  is the engine, the surfaces and the deploy path, and nothing else. Run it in your own account,
-  behind a password.
+  is the engine, the surfaces and the deploy path, and nothing else. Run it in your own account.
 
 ## License
 

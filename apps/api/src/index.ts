@@ -1,16 +1,7 @@
 import { TOOLS, signatureLine, type AiBinding, type D1Like } from "@rel/core";
-import {
-  agentsPaused,
-  authenticate,
-  clearedCookie,
-  createSession,
-  newAgentKey,
-  passwordMatches,
-  sessionCookie,
-  sha256Hex,
-  type Env,
-  type Principal,
-} from "./auth";
+import { createAuth } from "./auth-better";
+import { agentsPaused, authenticate, currentSession, newAgentKey, sha256Hex, type Principal } from "./auth";
+import type { Env } from "./env";
 import { handleMcp } from "./mcp";
 import { callTool } from "./tools/dispatch";
 
@@ -129,34 +120,33 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
   const path = url.pathname.replace(/\/+$/, "") || "/api";
   const method = req.method.toUpperCase();
 
-  // ---- public: session lifecycle -------------------------------------------
-  if (path === "/api/login" && method === "POST") {
-    const body = await readJson<{ password?: string }>(req);
-    if (!env.LOGIN_PASSWORD || !env.SESSION_SECRET) {
-      return json({ error: "This deployment has no password configured yet." }, { status: 503 });
+  // ---- Better Auth owns /api/auth/* (sign-up, sign-in, sign-out, session) ---
+  if (path.startsWith("/api/auth") && env.BETTER_AUTH_SECRET) {
+    try {
+      return await createAuth(env).handler(req);
+    } catch (error) {
+      // A 1101 with no detail is impossible to debug from outside, so the cause
+      // is logged and echoed. This deployment is private and single-owner.
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`auth handler failed: ${message}`);
+      return json({ error: "auth failed", detail: message }, { status: 500 });
     }
-    if (!body?.password || !(await passwordMatches(env, body.password))) {
-      return json({ error: "That password does not match." }, { status: 401 });
-    }
-    const value = await createSession(env.SESSION_SECRET);
-    return json({ ok: true }, { headers: { "Set-Cookie": sessionCookie(value) } });
-  }
-
-  if (path === "/api/logout" && method === "POST") {
-    return json({ ok: true }, { headers: { "Set-Cookie": clearedCookie() } });
   }
 
   if (path === "/api/session" && method === "GET") {
     const principal = await authenticate(req, env);
+    const session = await currentSession(req, env);
     return json({
       authed: Boolean(principal),
       kind: principal?.kind ?? null,
       name: principal?.name ?? null,
       scopes: principal?.scopes ?? null,
-      configured: Boolean(env.LOGIN_PASSWORD),
+      configured: Boolean(env.BETTER_AUTH_SECRET),
       app: env.APP_NAME ?? "Relationship Manager",
       signature: signatureLine(),
       model: env.AI ? (env.AI_MODEL ?? DEFAULT_AI_MODEL) : null,
+      account: session ? { email: session.user.email, name: session.user.name } : null,
+      signupOpen: Boolean(env.ALLOWED_EMAILS?.trim()),
     });
   }
 

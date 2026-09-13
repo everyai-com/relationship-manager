@@ -1,0 +1,11 @@
+# Local development only — copy to `.dev.vars` (gitignored).
+# In production these are Worker secrets: `npx wrangler secret put NAME`.
+
+# Better Auth signing secret. Anything long and random:
+#   openssl rand -hex 32
+BETTER_AUTH_SECRET=local-dev-secret-change-me-0123456789abcdef
+BETTER_AUTH_URL=http://127.0.0.1:8799
+
+# Optional: permit specific addresses to create an account (comma separated).
+# Without it, only the first account can ever be created.
+# ALLOWED_EMAILS=you@example.com,them@example.com

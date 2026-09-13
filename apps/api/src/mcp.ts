@@ -2,7 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { signaturePreamble, TOOLS, type AiBinding, type D1Like } from "@rel/core";
 import type { ZodRawShape } from "zod";
-import { agentsPaused, type Env, type Principal } from "./auth";
+import { agentsPaused, type Principal } from "./auth";
+import type { Env } from "./env";
 import { callTool } from "./tools/dispatch";
 
 /**
