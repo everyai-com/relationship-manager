@@ -19,7 +19,7 @@ and *deciding who to reach out to*.
 
 ## Demo
 
-**Two-minute walkthrough:** _TODO — paste the demo video URL here._
+**Walkthrough:** [Sync Your Contacts and Conversation Pipelines](https://www.loom.com/share/2bcc0b3f99e24ecb91c35d4a5410aea7) (Loom)
 
 **Live app:** https://relationship-manager.everyai-com.workers.dev (sign-up is closed after the
 owner account — the deployment is one person's real relationships, not a demo tenant).
