@@ -5,6 +5,8 @@ export interface SessionInfo {
   scopes: string | null;
   configured: boolean;
   app: string;
+  signature?: string;
+  model?: string | null;
 }
 
 export interface ToolMeta {
@@ -46,6 +48,8 @@ export interface Identifiers {
   phones: string[];
   wa_jids: string[];
   fathom: string[];
+  linkedin: string[];
+  instagram: string[];
 }
 
 export interface Person {

@@ -62,6 +62,16 @@ export const WEIGHTS: Record<string, Weight> = {
   "employer-only": { weight: 0.2, primary: false, label: "the company matches, the person does not" },
   "agent.inference": { weight: 0.25, primary: false, label: "an agent inferred it, without a direct source" },
   "heuristic.estimate": { weight: 0.3, primary: false, label: "a conservative built-in estimate" },
+  // Socials. A connection or a DM is the user's own record of a real tie — but a
+  // profile field scraped from it can be stale, so it lands as a suggestion
+  // (0.8) rather than being written. A follow is weaker: it identifies an
+  // account, not a relationship.
+  "linkedin.connection": { weight: 0.8, primary: true, label: "you are connected on LinkedIn" },
+  "linkedin.message-exchanged": { weight: 0.85, primary: true, label: "you've exchanged LinkedIn messages" },
+  "linkedin.invitation-sent": { weight: 0.6, primary: false, label: "you invited them on LinkedIn" },
+  "linkedin.invitation-received": { weight: 0.6, primary: false, label: "they invited you on LinkedIn" },
+  "instagram.follows-you": { weight: 0.55, primary: false, label: "they follow you on Instagram" },
+  "instagram.you-follow": { weight: 0.5, primary: false, label: "you follow them on Instagram" },
   contradiction: { weight: 0.0, primary: false, label: "another source disagrees" },
 };
 

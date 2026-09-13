@@ -1,6 +1,6 @@
 import { hasScope, type Principal } from "../auth";
 import { sha256Hex } from "../auth";
-import { TOOL_BY_NAME, type D1Like } from "@rel/core";
+import { TOOL_BY_NAME, type AiBinding, type D1Like } from "@rel/core";
 import { z } from "zod";
 import { handlers } from "./handlers";
 
@@ -21,6 +21,7 @@ export async function callTool(opts: {
   name: string;
   args: unknown;
   paused?: boolean;
+  ai?: AiBinding | null;
 }): Promise<DispatchResult> {
   const started = Date.now();
   const { db, principal, name } = opts;
@@ -72,7 +73,13 @@ export async function callTool(opts: {
 
   try {
     const result = await handlers[name]!(
-      { db, now: new Date().toISOString(), agent: principal.kind === "agent" ? { id: principal.agentId!, name: principal.name, scopes: principal.scopes } : null },
+      {
+        db,
+        now: new Date().toISOString(),
+        agent:
+          principal.kind === "agent" ? { id: principal.agentId!, name: principal.name, scopes: principal.scopes } : null,
+        ai: opts.ai ?? null,
+      },
       parsed.data as Record<string, unknown>,
     );
     const band = (result as { band?: string } | null)?.band;

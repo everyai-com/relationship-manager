@@ -10,6 +10,8 @@
  *   REL_KEY   agent key  (rel_…) — required for anything but a local dev server
  */
 
+import { parseInstagramExport, parseLinkedInExport, type SocialExport } from "./importers.js";
+
 const API = (process.env.REL_API ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
 const KEY = process.env.REL_KEY ?? "";
 
@@ -80,13 +82,61 @@ function printReconnect(result: unknown, json: boolean) {
   }
 }
 
+/** Push an export in batches — a 47k-message file is not one request. */
+async function pushExport(exp: SocialExport, options: { peopleBatch?: number; messageBatch?: number } = {}) {
+  const peopleBatch = options.peopleBatch ?? 50;
+  const messageBatch = options.messageBatch ?? 300;
+
+  console.log(bold(`${exp.label}`) + dim(` — ${exp.people.length} people, ${exp.messages.length} messages`));
+  for (const note of exp.notes) console.log(dim(`  · ${note}`));
+  if (exp.self_handles.length) console.log(dim(`  · your handles: ${exp.self_handles.join(", ")}`));
+  console.log("");
+
+  const totals = { people_created: 0, people_merged: 0, identifiers: 0, suggestions: 0, applied: 0, messages: 0 };
+
+  const send = async (payload: Record<string, unknown>): Promise<void> => {
+    const result = (await callTool("import_social_export", {
+      source: exp.source,
+      label: exp.label,
+      exported_at: exp.exported_at,
+      self_handles: exp.self_handles,
+      ...payload,
+    })) as Partial<typeof totals>;
+    for (const key of Object.keys(totals) as Array<keyof typeof totals>) totals[key] += result?.[key] ?? 0;
+  };
+
+  for (let i = 0; i < exp.people.length; i += peopleBatch) {
+    const slice = exp.people.slice(i, i + peopleBatch);
+    await send({ people: slice });
+    console.log(dim(`  people ${Math.min(i + peopleBatch, exp.people.length)}/${exp.people.length}`));
+  }
+
+  for (let i = 0; i < exp.messages.length; i += messageBatch) {
+    const slice = exp.messages.slice(i, i + messageBatch);
+    await send({ messages: slice });
+    console.log(dim(`  messages ${Math.min(i + messageBatch, exp.messages.length)}/${exp.messages.length}`));
+  }
+
+  console.log("");
+  console.log(
+    `  ${bold("created")} ${totals.people_created} people   ${bold("merged into existing")} ${totals.people_merged}   ` +
+      `${bold("handles")} ${totals.identifiers}`,
+  );
+  console.log(`  ${bold("messages")} ${totals.messages}   ${bold("applied facts")} ${totals.applied}   ${bold("suggestions")} ${totals.suggestions}`);
+  if (totals.suggestions) console.log(dim("  review the suggestions in the app — nothing was written without you."));
+}
+
 async function main() {
   const { command, positional, flags } = parse(process.argv.slice(2));
   const json = flags.json === "true";
 
   switch (command) {
     case "people": {
-      const result = await callTool("search_people", { query: positional.join(" "), limit: Number(flags.limit ?? 25) });
+      const result = await callTool("search_people", {
+        query: positional.join(" "),
+        source: flags.source,
+        limit: Number(flags.limit ?? 25),
+      });
       return printPeople(result, json);
     }
     case "person": {
@@ -173,6 +223,20 @@ async function main() {
       });
       return console.log(JSON.stringify(result, null, 2));
     }
+    case "import-linkedin": {
+      const path = positional[0];
+      if (!path) throw new Error("usage: rel import-linkedin <path to the extracted export> [--no-messages] [--limit N]");
+      const parsed = parseLinkedInExport(path, {
+        skipMessages: flags["no-messages"] === "true",
+        messageLimit: flags.limit ? Number(flags.limit) : undefined,
+      });
+      return pushExport(parsed);
+    }
+    case "import-instagram": {
+      const path = positional[0];
+      if (!path) throw new Error("usage: rel import-instagram <path to the export folder or .zip>");
+      return pushExport(parseInstagramExport(path));
+    }
     case "propose": {
       const result = await callTool("propose_outreach", {
         person_id: Number(positional[0]),
@@ -196,6 +260,8 @@ async function main() {
           `  ${bold("reconnect")} [--cohort X]         who is worth a second conversation`,
           `  ${bold("connections")}                    how fresh each source is`,
           `  ${bold("decide")} <factId> accept|dismiss`,
+          `  ${bold("import-linkedin")} <path>          official LinkedIn export (Connections/Invitations/messages)`,
+          `  ${bold("import-instagram")} <path|.zip>    official Instagram export (followers/following)`,
           `  ${bold("log")} <id> --channel email --body "..." [--followup YYYY-MM-DD]`,
           `  ${bold("propose")} <id> --channel email --subject "..." --body "..."`,
           "",

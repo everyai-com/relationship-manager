@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { TOOLS, type D1Like } from "@rel/core";
+import { signaturePreamble, TOOLS, type AiBinding, type D1Like } from "@rel/core";
 import type { ZodRawShape } from "zod";
 import { agentsPaused, type Env, type Principal } from "./auth";
 import { callTool } from "./tools/dispatch";
@@ -10,17 +10,19 @@ import { callTool } from "./tools/dispatch";
  * definition the REST router and the CLI use — a tool cannot exist on one surface
  * and not the others.
  */
-export async function handleMcp(req: Request, env: Env, principal: Principal): Promise<Response> {
+export async function handleMcp(req: Request, env: Env, principal: Principal, ai: AiBinding | null): Promise<Response> {
   const paused = await agentsPaused(env);
 
   const server = new McpServer(
     { name: "relationship-manager", version: "0.1.0" },
     {
       instructions:
-        "Your relationship graph: the people the user actually talks to, resolved across email, " +
-        "WhatsApp, calendar and recorded calls. Read freely. Facts are earned — call record_fact " +
-        "with honest evidence observations and let the ledger score them. You cannot send anything: " +
-        "propose_outreach queues a draft for the user to approve. If a source is stale, say so.",
+        "Your relationship graph: the people the user actually talks to, resolved across email, WhatsApp, LinkedIn, " +
+        "Instagram, calendar and recorded calls. " +
+        signaturePreamble() +
+        " Read freely. Facts are earned — call record_fact with honest evidence observations and let the ledger score " +
+        "them. You cannot send anything: propose_outreach queues a draft for the user to approve. If a source is stale, " +
+        "say so.",
     },
   );
 
@@ -44,6 +46,7 @@ export async function handleMcp(req: Request, env: Env, principal: Principal): P
         name: tool.name,
         args,
         paused,
+        ai,
       });
       const payload = res.ok ? { ok: true, ...(res.result as object), _meta: res.meta } : { ok: false, error: res.error };
       return {

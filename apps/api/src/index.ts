@@ -1,4 +1,4 @@
-import { TOOLS, type D1Like } from "@rel/core";
+import { TOOLS, signatureLine, type AiBinding, type D1Like } from "@rel/core";
 import {
   agentsPaused,
   authenticate,
@@ -27,6 +27,62 @@ function json(data: unknown, init: ResponseInit = {}): Response {
 
 const unauthorized = () =>
   json({ error: "Sign in required" }, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="relationship-manager"' } });
+
+const DEFAULT_AI_MODEL = "@cf/zai-org/glm-5.3-flash";
+
+/**
+ * Workers AI, wrapped so the domain layer never sees the binding. If the binding
+ * is absent the model-backed tools say so instead of failing obscurely.
+ *
+ * glm-5.3-flash is a *reasoning* model: it spends completion tokens on
+ * `reasoning_content` before writing `content`, so the budget has to be
+ * generous or the answer comes back empty. We keep thinking on — turning it off
+ * makes the model leak its scratch work into the answer.
+ */
+function aiFrom(env: Env): AiBinding | null {
+  const binding = env.AI;
+  if (!binding) return null;
+  const model = env.AI_MODEL && env.AI_MODEL.trim() ? env.AI_MODEL.trim() : DEFAULT_AI_MODEL;
+
+  return {
+    model,
+    run: async ({ system, user }) => {
+      const result = (await binding.run(model as never, {
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        max_tokens: 2048,
+        temperature: 0.2,
+      } as never)) as unknown;
+
+      const text = extractModelText(result).trim();
+      if (!text) {
+        throw new Error(
+          `the model (${model}) returned no answer — it may have spent its whole budget reasoning. Try again, or ask a narrower question.`,
+        );
+      }
+      return text;
+    },
+  };
+}
+
+/** Chat models return choices[].message.content; older text models return `response`. */
+function extractModelText(result: unknown): string {
+  if (typeof result === "string") return result;
+  const value = result as
+    | { response?: unknown; choices?: Array<{ message?: { content?: unknown }; text?: unknown }>; result?: { response?: unknown } }
+    | null;
+  if (!value) return "";
+  if (typeof value.response === "string") return value.response;
+  if (typeof value.result?.response === "string") return value.result.response;
+  const choice = value.choices?.[0];
+  if (choice) {
+    if (typeof choice.message?.content === "string") return choice.message.content;
+    if (typeof choice.text === "string") return choice.text;
+  }
+  return "";
+}
 
 async function readJson<T>(req: Request): Promise<T | null> {
   try {
@@ -64,7 +120,7 @@ async function mcpRoute(req: Request, env: Env): Promise<Response> {
   }
   const principal = await authenticate(req, env);
   if (!principal) return unauthorized();
-  const res = await handleMcp(req, env, principal);
+  const res = await handleMcp(req, env, principal, aiFrom(env));
   res.headers.set("Access-Control-Allow-Origin", "*");
   return res;
 }
@@ -99,6 +155,8 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
       scopes: principal?.scopes ?? null,
       configured: Boolean(env.LOGIN_PASSWORD),
       app: env.APP_NAME ?? "Relationship Manager",
+      signature: signatureLine(),
+      model: env.AI ? (env.AI_MODEL ?? DEFAULT_AI_MODEL) : null,
     });
   }
 
@@ -123,7 +181,7 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
     const name = path.slice("/api/tools/".length);
     const body = await readJson<Record<string, unknown>>(req);
     const paused = await agentsPaused(env);
-    const res = await callTool({ db: env.DB, principal, name, args: body ?? {}, paused });
+    const res = await callTool({ db: env.DB, principal, name, args: body ?? {}, paused, ai: aiFrom(env) });
     return json(res, { status: res.ok ? 200 : res.error?.includes("denied") ? 403 : 400 });
   }
 

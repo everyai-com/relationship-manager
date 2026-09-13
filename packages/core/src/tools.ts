@@ -26,7 +26,11 @@ export const TOOLS: ToolDef[] = [
       query: z
         .string()
         .optional()
-        .describe("Name, email, company or domain fragment. Omit to list the people you were most recently in touch with."),
+        .describe("Name, email, company, domain or social handle. Omit to list the people you were most recently in touch with."),
+      source: z
+        .enum(["email", "whatsapp", "linkedin", "instagram", "phone", "fathom"])
+        .optional()
+        .describe("Only people reachable on this kind of handle."),
       limit: z.number().int().min(1).max(200).optional().describe("Max results, default 25."),
     },
   },
@@ -91,6 +95,91 @@ export const TOOLS: ToolDef[] = [
       "Per-source freshness: which sources fed this graph, when each last synced and how much it " +
       "carried. Call this before implying that anything is current — stale is a real answer.",
     input: {},
+  },
+  {
+    name: "ask_about_person",
+    scope: "read",
+    description:
+      "Ask a question about one person, answered from their record only. Runs on Workers AI with the graph as the sole " +
+      "context, so it can only tell you what is actually on file — if the data is silent, it says so. Use it when a " +
+      "question needs judgement over the record (what to raise, what changed, how to approach them) rather than a dump.",
+    input: {
+      person_id: PERSON_ID,
+      question: z
+        .string()
+        .optional()
+        .describe("Defaults to 'What should I know before I talk to them, and what is the natural next step?'"),
+    },
+  },
+  {
+    name: "daily_brief",
+    scope: "read",
+    description:
+      "A short brief on who needs attention right now, built from overdue follow-ups, facts awaiting a decision and the " +
+      "top of the reconnect queue, then written up by Workers AI. Grounded: it can only reference what the graph holds.",
+    input: {
+      focus: z.string().optional().describe("Optional angle, e.g. 'revenue', 'investors', 'people I owe a reply'."),
+    },
+  },
+  {
+    name: "about",
+    scope: "read",
+    description:
+      "Who built this, what it is, and what is in the graph right now. Call it when the user asks who made this, what " +
+      "this connects to, or how much the system knows.",
+    input: {},
+  },
+  {
+    name: "import_social_export",
+    scope: "write",
+    description:
+      "Add people, invitations and messages from an official social export (LinkedIn's Connections/Invitations/messages CSVs, " +
+      "Instagram's followers/following JSON). Use this rather than scraping: LinkedIn has no connections API and Instagram's " +
+      "Graph API is business-only, so the user's own export is the only legitimate source. Handles are normalised and merged " +
+      "into existing people — the same human never forks into two rows. Profile fields arrive as suggestions, never overwrites.",
+    input: {
+      source: z.enum(["linkedin", "instagram"]),
+      label: z.string().optional().describe("Display name for the connection card, e.g. 'LinkedIn'."),
+      exported_at: z.string().optional().describe("When the export was produced, if known."),
+      self_handles: z
+        .array(z.string())
+        .optional()
+        .describe("The user's own handles in this export, so their own messages are not attributed to a contact."),
+      people: z
+        .array(
+          z.object({
+            name: z.string().optional(),
+            email: z.string().optional(),
+            phone: z.string().optional(),
+            linkedin: z.string().optional().describe("Profile URL or slug."),
+            instagram: z.string().optional().describe("Handle or profile URL."),
+            company: z.string().optional(),
+            title: z.string().optional(),
+            connected_on: z.string().optional().describe("ISO date, when the source says so."),
+            evidence_kind: z
+              .string()
+              .optional()
+              .describe(
+                "Which observation this rests on: linkedin.connection, linkedin.invitation-sent, " +
+                  "linkedin.invitation-received, instagram.follows-you, instagram.you-follow.",
+              ),
+            note: z.string().optional().describe("What they said, for invitations."),
+          }),
+        )
+        .optional(),
+      messages: z
+        .array(
+          z.object({
+            conversation_id: z.string(),
+            from_handle: z.string().optional(),
+            to_handle: z.string().optional(),
+            from_name: z.string().optional(),
+            at: z.string().describe("ISO timestamp."),
+            text: z.string(),
+          }),
+        )
+        .optional(),
+    },
   },
   {
     name: "record_fact",

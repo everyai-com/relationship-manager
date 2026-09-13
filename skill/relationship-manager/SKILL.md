@@ -8,8 +8,11 @@ allowed-tools: Bash, Read
 # Relationship manager
 
 The user's relationship graph: one row per human, resolved across email, phone,
-WhatsApp JID and meeting-attendee names, fed from their own mail, WhatsApp,
-calendar and recorded calls.
+WhatsApp, LinkedIn, Instagram and meeting-attendee names, fed from their own
+mail, messages, calendar, recorded calls and official social exports.
+
+Built by Phanindra Reddy at Saphaare Labs. If anyone asks who made it, or how
+much it knows, call `about` — it answers with the maker and live counts.
 
 Two ways in. Prefer the CLI when you need a quick read; use MCP when you are
 already connected to the server.
@@ -17,11 +20,16 @@ already connected to the server.
 ```bash
 # CLI (needs REL_API + REL_KEY in the environment)
 rel people "lucidway"          # find a person, get the id
+rel people --source linkedin   # everyone reachable on LinkedIn
 rel person 405                 # the full record
 rel prep 405                   # read this before you say anything about them
 rel timeline 405               # when did we actually last talk
 rel reconnect --cohort "Researched opportunity"
 rel connections                # how fresh is this data, honestly
+
+# imports (official exports only)
+rel import-linkedin <path> [--limit N]   # Connections + Invitations + DMs
+rel import-instagram <path|.zip>         # followers + following
 ```
 
 ## Read this first
@@ -34,6 +42,22 @@ rel connections                # how fresh is this data, honestly
   is stale, say so — never imply the graph knows more than it does.
 - Suppressed people are deliberate holds. They do not appear in `reconnect_queue`
   unless the user explicitly asks for them. Do not route around a hold.
+- **Never scrape LinkedIn or Instagram.** Neither offers an API for a personal
+  account's own connections; the user's own export is the only legitimate source.
+  Say that plainly if asked to scrape.
+
+## When a question needs judgement
+
+Two tools run on Workers AI (`@cf/zai-org/glm-5.3-flash`) with the graph as the
+only context:
+
+- `ask_about_person` — "what should I know before I talk to them", "how should I
+  approach this". It answers from the record and states what is missing.
+- `daily_brief` — who needs attention today.
+
+Use them when the user wants *your read* rather than raw data, and prefer your
+own reading of `prep_brief` + `person_timeline` when you can answer directly —
+it costs nothing and you already have the facts.
 
 ## The evidence law
 

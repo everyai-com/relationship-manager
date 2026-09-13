@@ -17,11 +17,19 @@ export interface D1Like {
   batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 
+/** Workers AI, handed to the domain layer without leaking the binding type. */
+export interface AiBinding {
+  model: string;
+  run: (opts: { system: string; user: string }) => Promise<string>;
+}
+
 export interface ToolContext {
   db: D1Like;
   now: string;
   /** Present when the caller is an agent; null for the human UI. */
   agent: { id: number; name: string; scopes: string } | null;
+  /** Present when the deployment has a Workers AI binding. */
+  ai?: AiBinding | null;
 }
 
 export type ToolHandler = (ctx: ToolContext, args: Record<string, unknown>) => Promise<unknown>;

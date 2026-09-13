@@ -1,7 +1,13 @@
+import { importSocialExport } from "./import-social";
 import {
   labelsFor,
+  normalizeEmail,
+  normalizeInstagram,
+  normalizeLinkedIn,
+  normalizePhone,
   ROW_FIELDS,
   scoreEvidence,
+  SIGNATURE,
   type D1Like,
   type Fact,
   type IdentifierKind,
@@ -21,7 +27,22 @@ async function run(db: D1Like, sql: string, ...args: unknown[]) {
   return db.prepare(sql).bind(...args).run();
 }
 
-const emptyIdentifiers = (): Identifiers => ({ emails: [], phones: [], wa_jids: [], fathom: [] });
+const emptyIdentifiers = (): Identifiers => ({
+  emails: [],
+  phones: [],
+  wa_jids: [],
+  fathom: [],
+  linkedin: [],
+  instagram: [],
+});
+
+/** The grounding contract for every model-backed tool. */
+const GROUNDED_SYSTEM =
+  "You are the chief of staff for one person's relationship graph. Answer ONLY from the record supplied in the user " +
+  "message. If the record does not contain the answer, say plainly what is missing — never invent a meeting, a number, " +
+  "a date, a commitment or a company. Be brief and specific: 2–5 sentences, or a few tight bullets. Refer to people by " +
+  "name and cite what you are drawing on (\"they replied on the LucidWay thread in August\"). You cannot send anything " +
+  "and must never imply that you have.";
 
 async function identifiersFor(db: D1Like, personIds: number[]): Promise<Record<number, Identifiers>> {
   const out: Record<number, Identifiers> = {};
@@ -39,6 +60,8 @@ async function identifiersFor(db: D1Like, personIds: number[]): Promise<Record<n
     else if (r.kind === "phone") bucket.phones.push(r.value);
     else if (r.kind === "wa_jid") bucket.wa_jids.push(r.value);
     else if (r.kind === "fathom_attendee") bucket.fathom.push(r.value);
+    else if (r.kind === "linkedin") bucket.linkedin.push(r.value);
+    else if (r.kind === "instagram") bucket.instagram.push(r.value);
   }
   return out;
 }
@@ -119,11 +142,19 @@ async function personDetail(db: D1Like, id: number) {
   const identifiers = (await identifiersFor(db, [id]))[id] ?? emptyIdentifiers();
 
   const like = `%${person.email}%`;
+  // Handles live in the same message table (LinkedIn DMs store the profile URL
+  // as the from/to address), so a person's history is one query away.
+  const socials = [...identifiers.linkedin, ...identifiers.instagram];
+  const socialClause = socials.length ? ` OR from_addr IN (${socials.map(() => "?").join(",")}) OR to_addr IN (${socials.map(() => "?").join(",")})` : "";
+  const socialParams = socials.length ? [...socials, ...socials] : [];
+
   const messages = await all<Record<string, unknown>>(
     db,
-    "SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date FROM messages WHERE from_addr LIKE ? OR to_addr LIKE ? ORDER BY internal_date DESC LIMIT 20",
+    `SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date, service FROM messages
+     WHERE (from_addr LIKE ? OR to_addr LIKE ?${socialClause}) ORDER BY internal_date DESC LIMIT 20`,
     like,
     like,
+    ...socialParams,
   );
   const events = await all<Record<string, unknown>>(
     db,
@@ -189,10 +220,156 @@ async function fathomForPerson(db: D1Like, ids: Identifiers) {
   return out;
 }
 
+/**
+ * The single write path for facts, shared by the `record_fact` tool and the
+ * importers so an import cannot bypass the evidence law.
+ */
+async function recordFactCore(
+  db: D1Like,
+  now: string,
+  personId: number,
+  field: string,
+  value: string,
+  evidence: Array<{ kind: string; detail?: string }>,
+  sourceUrl: string | null = null,
+): Promise<Record<string, unknown>> {
+  if (!field || !value) return { error: "field and value are required" };
+
+  const scored = scoreEvidence(evidence);
+  if (!scored.band) return { stored: false, reason: "insufficient evidence", score: scored.score };
+
+  const person = await personOr404(db, personId);
+  if (!person) return { error: "person not found" };
+
+  const existing = await first<{ id: number; status: string }>(
+    db,
+    "SELECT id, status FROM person_facts WHERE person_id = ? AND field = ? AND value = ?",
+    personId,
+    field,
+    value,
+  );
+  if (existing?.status === "DISMISSED") return { stored: false, reason: "previously dismissed" };
+  if (existing?.status === "APPLIED") return { stored: false, reason: "already applied" };
+
+  const humanFields = safeJsonArray(person.human_fields);
+  const applies = scored.band === "VERIFIED" && !humanFields.includes(field);
+  const status = applies ? "APPLIED" : "PROPOSED";
+
+  if (existing) {
+    await run(
+      db,
+      `UPDATE person_facts SET band = ?, score = ?, evidence = ?, rationale = ?, status = ?, source_url = ?, observed_at = ?, updated_at = ? WHERE id = ?`,
+      scored.band,
+      scored.score,
+      JSON.stringify(evidence),
+      scored.rationale,
+      status,
+      sourceUrl,
+      now,
+      now,
+      existing.id,
+    );
+  } else {
+    await run(
+      db,
+      `INSERT INTO person_facts (person_id, field, value, band, score, evidence, rationale, status, source_url, observed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      personId,
+      field,
+      value,
+      scored.band,
+      scored.score,
+      JSON.stringify(evidence),
+      scored.rationale,
+      status,
+      sourceUrl,
+      now,
+      now,
+      now,
+    );
+  }
+
+  if (applies && ROW_FIELDS.has(field)) {
+    await run(db, `UPDATE people SET ${field} = ?, updated_at = ? WHERE id = ?`, value, now, personId);
+  }
+
+  return {
+    stored: true,
+    status,
+    band: scored.band,
+    score: scored.score,
+    rationale: scored.rationale,
+    reasons: labelsFor(evidence),
+  };
+}
+
+/** Find a person by any of their handles, or make one. */
+async function resolveOrCreatePerson(
+  db: D1Like,
+  now: string,
+  candidates: Array<{ kind: IdentifierKind; value: string }>,
+  fallback: { name?: string; email?: string },
+): Promise<{ personId: number; created: boolean; linked: number }> {
+  let personId: number | null = null;
+  for (const candidate of candidates) {
+    if (!candidate.value) continue;
+    const row = await first<{ person_id: number }>(
+      db,
+      "SELECT person_id FROM person_identifiers WHERE kind = ? AND value = ?",
+      candidate.kind,
+      candidate.value,
+    );
+    if (row) {
+      personId = row.person_id;
+      break;
+    }
+  }
+
+  const created = personId === null;
+  if (personId === null) {
+    const email = fallback.email ?? "";
+    const result = await run(
+      db,
+      `INSERT INTO people (email, name, company_domain, created_at, updated_at) VALUES (?, ?, '', ?, ?)`,
+      email,
+      fallback.name ?? "",
+      now,
+      now,
+    );
+    personId = Number((result.meta as { last_row_id?: number } | undefined)?.last_row_id ?? 0);
+    if (!personId) {
+      const row = await first<{ id: number }>(db, "SELECT id FROM people ORDER BY id DESC LIMIT 1");
+      personId = row?.id ?? 0;
+    }
+  }
+
+  let linked = 0;
+  for (const candidate of candidates) {
+    if (!candidate.value) continue;
+    const res = await run(
+      db,
+      "INSERT OR IGNORE INTO person_identifiers (person_id, kind, value, created_at) VALUES (?, ?, ?, ?)",
+      personId,
+      candidate.kind,
+      candidate.value,
+      now,
+    );
+    linked += Number((res.meta as { changes?: number } | undefined)?.changes ?? 0);
+  }
+  return { personId, created, linked };
+}
+
 export const handlers: ToolHandlers = {
   async search_people(ctx, args) {
     const query = String(args.query ?? "").trim();
     const limit = Math.min(Number(args.limit ?? 25) || 25, 200);
+    const source = args.source ? String(args.source) : null;
+    const sourceKind = source === "linkedin" ? "linkedin" : source === "instagram" ? "instagram" : source === "whatsapp" ? "wa_jid" : source;
+
+    const sourceClause = sourceKind
+      ? " AND EXISTS (SELECT 1 FROM person_identifiers si WHERE si.person_id = p.id AND si.kind = ?)"
+      : "";
+    const sourceParam = sourceKind ? [sourceKind] : [];
 
     if (!query) {
       // No query means "who have I been talking to lately" — the natural first
@@ -201,9 +378,10 @@ export const handlers: ToolHandlers = {
         ctx.db,
         `SELECT p.*, (SELECT COUNT(*) FROM person_facts f WHERE f.person_id = p.id AND f.status = 'PROPOSED') AS proposed_count
          FROM people p
-         WHERE p.last_touch IS NOT NULL
+         WHERE p.last_touch IS NOT NULL${sourceClause}
          ORDER BY p.last_touch DESC
          LIMIT ?`,
+        ...sourceParam,
         limit,
       );
       const ids = await identifiersFor(ctx.db, rows.map((r) => r.id));
@@ -211,17 +389,22 @@ export const handlers: ToolHandlers = {
     }
 
     const like = `%${query}%`;
+    // Handles are searchable too: "who is this linkedin.com/in/foo person" is a
+    // question an agent gets asked constantly.
     const rows = await all<PersonRow & { proposed_count: number }>(
       ctx.db,
       `SELECT p.*, (SELECT COUNT(*) FROM person_facts f WHERE f.person_id = p.id AND f.status = 'PROPOSED') AS proposed_count
        FROM people p
-       WHERE p.name LIKE ? OR p.email LIKE ? OR p.company LIKE ? OR p.company_domain LIKE ?
+       WHERE (p.name LIKE ? OR p.email LIKE ? OR p.company LIKE ? OR p.company_domain LIKE ?
+              OR EXISTS (SELECT 1 FROM person_identifiers pi WHERE pi.person_id = p.id AND pi.value LIKE ?))${sourceClause}
        ORDER BY (p.last_touch IS NULL), p.last_touch DESC, p.name
        LIMIT ?`,
       like,
       like,
       like,
       like,
+      like,
+      ...sourceParam,
       limit,
     );
     const ids = await identifiersFor(ctx.db, rows.map((r) => r.id));
@@ -246,6 +429,8 @@ export const handlers: ToolHandlers = {
     const reach = [
       ...identifiers.wa_jids.map((j) => `WhatsApp ${j}`),
       ...identifiers.phones.map((p) => `phone ${p}`),
+      ...identifiers.linkedin.map((u) => `LinkedIn ${u}`),
+      ...identifiers.instagram.map((h) => `Instagram @${h}`),
       ...identifiers.emails.filter((e) => e !== person.email),
     ];
     if (reach.length) {
@@ -272,6 +457,27 @@ export const handlers: ToolHandlers = {
       } else {
         for (const w of wa) {
           lines.push(`- ${day(w.at)} (${w.fromMe ? "you" : "them"}): ${w.text || ""}`);
+        }
+      }
+    }
+
+    const socials = [...identifiers.linkedin, ...identifiers.instagram];
+    if (socials.length) {
+      const handles = socials.map(() => "?").join(",");
+      const rows = await all<{ snippet: string; last_from_user: number; internal_date: string; service: string }>(
+        ctx.db,
+        `SELECT snippet, last_from_user, internal_date, service FROM messages
+         WHERE service IN ('linkedin', 'instagram') AND (from_addr IN (${handles}) OR to_addr IN (${handles}))
+         ORDER BY internal_date DESC LIMIT 6`,
+        ...socials,
+        ...socials,
+      );
+      lines.push("\n## LinkedIn");
+      if (rows.length === 0) {
+        lines.push("Connected, but no messages imported from the export yet.");
+      } else {
+        for (const row of rows) {
+          lines.push(`- ${day(row.internal_date)} (${row.last_from_user ? "you" : "them"}): ${String(row.snippet ?? "").slice(0, 200)}`);
         }
       }
     }
@@ -360,6 +566,32 @@ export const handlers: ToolHandlers = {
       });
     }
 
+    const socials = [...ids.linkedin, ...ids.instagram];
+    if (socials.length) {
+      const handles = socials.map(() => "?").join(",");
+      const socialRows = await all<Record<string, unknown>>(
+        ctx.db,
+        `SELECT id, service, from_addr, to_addr, snippet, internal_date, last_from_user FROM messages
+         WHERE service IN ('linkedin', 'instagram')
+           AND (from_addr IN (${handles}) OR to_addr IN (${handles}))
+         ORDER BY internal_date DESC LIMIT ?`,
+        ...socials,
+        ...socials,
+        limit,
+      );
+      for (const row of socialRows) {
+        entries.push({
+          kind: String(row.service) === "instagram" ? "instagram" : "linkedin",
+          id: row.id,
+          title: row.last_from_user ? "You" : "Them",
+          detail: String(row.snippet ?? "").slice(0, 200),
+          at: (row.internal_date as string) ?? null,
+          service: String(row.service),
+          link: null,
+        });
+      }
+    }
+
     entries.sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? "")));
     return { person: { id: person.id, name: person.name || person.email }, timeline: entries.slice(0, limit) };
   },
@@ -434,85 +666,159 @@ export const handlers: ToolHandlers = {
       ctx.db,
       "SELECT id, source, label, status, last_sync_at, item_count, detail FROM connections ORDER BY source",
     );
+    if (ctx.ai) {
+      rows.unshift({
+        id: "ai",
+        source: "ai",
+        label: "Workers AI",
+        status: "connected",
+        last_sync_at: ctx.now,
+        item_count: 0,
+        detail: `Grounded answers (ask_about_person, daily_brief) run on ${ctx.ai.model} at Cloudflare's edge — in this account, not a third party.`,
+      });
+    }
     return { connections: rows };
   },
 
-  async record_fact(ctx, args) {
-    const personId = Number(args.person_id);
-    const field = String(args.field ?? "").trim();
-    const value = String(args.value ?? "").trim();
-    const evidence = Array.isArray(args.evidence) ? (args.evidence as Array<{ kind: string; detail?: string }>) : [];
-    if (!field || !value) return { error: "field and value are required" };
-
-    const scored = scoreEvidence(evidence);
-    if (!scored.band) return { stored: false, reason: "insufficient evidence", score: scored.score };
-
-    const person = await personOr404(ctx.db, personId);
-    if (!person) return { error: "person not found" };
-
-    const existing = await first<{ id: number; status: string }>(
+  async about(ctx) {
+    const summary = await first<Record<string, number>>(
       ctx.db,
-      "SELECT id, status FROM person_facts WHERE person_id = ? AND field = ? AND value = ?",
-      personId,
-      field,
-      value,
+      `SELECT (SELECT COUNT(*) FROM people) AS people,
+              (SELECT COUNT(*) FROM person_identifiers) AS handles,
+              (SELECT COUNT(*) FROM person_identifiers WHERE kind = 'linkedin') AS linkedin,
+              (SELECT COUNT(*) FROM person_identifiers WHERE kind = 'instagram') AS instagram,
+              (SELECT COUNT(*) FROM person_facts WHERE status = 'APPLIED') AS facts_settled,
+              (SELECT COUNT(*) FROM person_facts WHERE status = 'PROPOSED') AS facts_awaiting,
+              (SELECT COUNT(*) FROM messages) AS messages,
+              (SELECT COUNT(*) FROM meetings) AS meetings,
+              (SELECT COUNT(*) FROM reconnect WHERE suppressed = 0) AS reconnect,
+              (SELECT COUNT(*) FROM connections) AS sources`,
     );
-    if (existing?.status === "DISMISSED") return { stored: false, reason: "previously dismissed" };
-    if (existing?.status === "APPLIED") return { stored: false, reason: "already applied" };
+    return {
+      built_by: SIGNATURE.line,
+      author: SIGNATURE.author,
+      labs: SIGNATURE.labs,
+      github: SIGNATURE.github,
+      site: SIGNATURE.site,
+      what_this_is:
+        "An agent-native relationship manager: one row per human, resolved across email, phone, WhatsApp, LinkedIn, " +
+        "Instagram and meeting attendees, with every derived fact carrying the evidence it rests on.",
+      knows_the_people:
+        "Everything it says about a person comes from that person's own record — mail, messages, meetings, calls and " +
+        "the exported social graph. It has no other knowledge of them and will say so when the record is silent.",
+      model: ctx.ai?.model ?? null,
+      graph: summary ?? {},
+    };
+  },
 
-    const humanFields = safeJsonArray(person.human_fields);
-    const applies = scored.band === "VERIFIED" && !humanFields.includes(field);
-    const status = applies ? "APPLIED" : "PROPOSED";
-    const now = ctx.now;
-    const observedAt = String(args.observed_at ?? now);
-    const sourceUrl = args.source_url ? String(args.source_url) : null;
+  /**
+   * The two model-backed tools. Both are grounded: the model receives the
+   * record, never the open internet — and the prompt forbids inventing what the
+   * record does not contain.
+   */
+  async ask_about_person(ctx, args) {
+    if (!ctx.ai) return { error: "Workers AI is not bound in this deployment" };
+    const personId = Number(args.person_id);
+    const question = String(
+      args.question ?? "What should I know before I talk to them, and what is the natural next step?",
+    ).trim();
 
-    if (existing) {
-      await run(
-        ctx.db,
-        `UPDATE person_facts SET band = ?, score = ?, evidence = ?, rationale = ?, status = ?, source_url = ?, observed_at = ?, updated_at = ? WHERE id = ?`,
-        scored.band,
-        scored.score,
-        JSON.stringify(evidence),
-        scored.rationale,
-        status,
-        sourceUrl,
-        observedAt,
-        now,
-        existing.id,
-      );
-    } else {
-      await run(
-        ctx.db,
-        `INSERT INTO person_facts (person_id, field, value, band, score, evidence, rationale, status, source_url, observed_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        personId,
-        field,
-        value,
-        scored.band,
-        scored.score,
-        JSON.stringify(evidence),
-        scored.rationale,
-        status,
-        sourceUrl,
-        observedAt,
-        now,
-        now,
-      );
-    }
+    const detail = await personDetail(ctx.db, personId);
+    if (!detail) return { error: "person not found" };
+    const brief = (await handlers.prep_brief!(ctx, { person_id: personId })) as { brief?: string };
 
-    if (applies && ROW_FIELDS.has(field)) {
-      await run(ctx.db, `UPDATE people SET ${field} = ?, updated_at = ? WHERE id = ?`, value, now, personId);
-    }
+    const facts = detail.facts
+      .map((f) => `- ${f.field}: ${f.value} (${f.band}; ${f.rationale})`)
+      .join("\n");
+    const reach = Object.entries(detail.identifiers)
+      .filter(([, values]) => values.length > 0)
+      .map(([kind, values]) => `${kind}: ${values.join(", ")}`)
+      .join("\n");
+
+    const record = [
+      `PERSON RECORD (the only thing you may draw on)`,
+      brief?.brief ?? "",
+      facts ? `\nFACTS\n${facts}` : "",
+      reach ? `\nHANDLES\n${reach}` : "",
+      `\nCOUNTS: ${detail.person.message_count} messages, ${detail.person.meeting_count} meetings`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const answer = await ctx.ai.run({ system: GROUNDED_SYSTEM, user: `${record}\n\nQUESTION: ${question}` });
+    return {
+      answer,
+      model: ctx.ai.model,
+      person: { id: personId, name: detail.person.name || detail.person.email },
+      grounded_on: { facts: detail.facts.length, messages: detail.messages.length, events: detail.events.length },
+    };
+  },
+
+  async daily_brief(ctx, args) {
+    if (!ctx.ai) return { error: "Workers AI is not bound in this deployment" };
+    const focus = args.focus ? String(args.focus) : "";
+
+    const due = await all<Record<string, unknown>>(
+      ctx.db,
+      `SELECT channel, subject, followup_at FROM outreach
+       WHERE followup_at IS NOT NULL AND followup_at <> '' AND followup_at <= ?
+       ORDER BY followup_at ASC LIMIT 10`,
+      ctx.now.slice(0, 10),
+    );
+    const proposed = await all<{ field: string; value: string; rationale: string; person_id: number }>(
+      ctx.db,
+      "SELECT field, value, rationale, person_id FROM person_facts WHERE status = 'PROPOSED' ORDER BY updated_at DESC LIMIT 10",
+    );
+    const queue = await all<{ name: string; email: string; cohort: string; signal: string; conversation_last: string }>(
+      ctx.db,
+      `SELECT name, email, cohort, signal, conversation_last FROM reconnect
+       WHERE suppressed = 0 AND cohort_rank <= 30 ORDER BY cohort_rank, priority LIMIT 8`,
+    );
+    const quiet = await all<{ label: string; status: string; last_sync_at: string | null }>(
+      ctx.db,
+      "SELECT label, status, last_sync_at FROM connections WHERE status IN ('stale', 'error')",
+    );
+
+    const record = [
+      `OVERDUE FOLLOW-UPS\n${due.map((r) => `- ${r.channel}: ${r.subject || "(no subject)"} due ${r.followup_at}`).join("\n") || "- none"}`,
+      `\nFACTS WAITING ON A HUMAN DECISION\n${proposed.map((f) => `- ${f.field}: ${f.value} — ${f.rationale}`).join("\n") || "- none"}`,
+      `\nTOP OF THE RECONNECT QUEUE\n${queue.map((r) => `- ${r.name || r.email} (${r.cohort}, last ${r.conversation_last ?? "unknown"}): ${String(r.signal).slice(0, 160)}`).join("\n") || "- none"}`,
+      `\nSOURCES NOT FRESH\n${quiet.map((c) => `- ${c.label}: ${c.status} (last ${c.last_sync_at ?? "never"})`).join("\n") || "- none"}`,
+    ].join("\n");
+
+    const answer = await ctx.ai.run({
+      system: GROUNDED_SYSTEM,
+      user: `${record}\n\nTASK: write a short brief on who needs attention today${focus ? `, focused on ${focus}` : ""}. Lead with the single most important thing. Then up to four bullets. End with one line naming what is stale or unknown.`,
+    });
 
     return {
-      stored: true,
-      status,
-      band: scored.band,
-      score: scored.score,
-      rationale: scored.rationale,
-      reasons: labelsFor(evidence),
+      brief: answer,
+      model: ctx.ai.model,
+      grounded_on: { overdue: due.length, awaiting_decision: proposed.length, reconnect: queue.length, stale_sources: quiet.length },
     };
+  },
+
+  async record_fact(ctx, args) {
+    const evidence = Array.isArray(args.evidence) ? (args.evidence as Array<{ kind: string; detail?: string }>) : [];
+    return recordFactCore(
+      ctx.db,
+      ctx.now,
+      Number(args.person_id),
+      String(args.field ?? "").trim(),
+      String(args.value ?? "").trim(),
+      evidence,
+      args.source_url ? String(args.source_url) : null,
+    );
+  },
+
+  /**
+   * Official social exports. Handles merge into existing people, profile fields
+   * become suggestions, and messages join the same table as email so a thread
+   * stays whole. Batched — see tools/import-social.ts. Nothing bypasses the
+   * evidence law.
+   */
+  async import_social_export(ctx, args) {
+    return importSocialExport(ctx, args);
   },
 
   async decide_fact(ctx, args) {

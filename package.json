@@ -14,7 +14,7 @@
     "predeploy": "npm run build",
     "deploy": "wrangler deploy",
     "db:create": "wrangler d1 create relationship-manager",
-    "db:migrate": "wrangler d1 execute relationship-manager --remote --file apps/api/migrations/0001_init.sql",
+    "db:migrate": "for f in apps/api/migrations/*.sql; do wrangler d1 execute relationship-manager --remote --file \"$f\"; done",
     "seed:build": "tsx packages/seed/src/build.ts",
     "seed:push": "for f in packages/seed/out/seed-*.sql; do wrangler d1 execute relationship-manager --remote --file \"$f\"; done",
     "typecheck": "tsc -p tsconfig.base.json --noEmit && tsc -p tsconfig.node.json --noEmit",

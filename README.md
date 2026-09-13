@@ -22,16 +22,45 @@ and *deciding who to reach out to*.
 ## What it does
 
 - **Resolves identity across sources.** `person_identifiers` is the authoritative index — email,
-  phone, WhatsApp JID, meeting-attendee name. One human, one row, no duplicates invented.
+  phone, WhatsApp JID, LinkedIn profile, Instagram handle, meeting-attendee name. One human, one
+  row, no duplicates invented.
 - **Keeps evidence, not vibes.** Every fact carries the observations that produced it and a band
   scored in code: `VERIFIED` (may be written), `PROBABLE` / `POSSIBLE` (offered for your call),
   below that (not stored at all). The model never supplies a confidence number.
 - **Prepares you.** `prep_brief` is deterministic and free — who they are, how you're reachable,
-  what's on file, recent email, meetings, WhatsApp, calls.
+  what's on file, recent email, meetings, WhatsApp, recorded calls, LinkedIn.
 - **Knows who to reconnect with.** Cohort-ranked, suppression-respecting, with the history it
   was derived from.
+- **Answers from the record, not the internet.** `ask_about_person` and `daily_brief` run on
+  Workers AI (`@cf/zai-org/glm-5.3-flash`) with the graph as the only context — and say what is
+  missing instead of inventing it.
 - **Never sends anything.** Agents can propose outreach; a human approves it. Writes are a
   different class of thing.
+
+## Social sources (LinkedIn, Instagram)
+
+LinkedIn has no API for a personal account's own connections, and Instagram's Graph API is
+business-only. Scraping either one breaks their terms and risks the account — so this system
+takes the only legitimate path: **your official export.**
+
+```bash
+# LinkedIn → Settings → Data privacy → Get a copy of your data → Connections
+rel import-linkedin ~/Downloads/Basic_LinkedInDataExport_2026-05-18     # Connections + Invitations
+rel import-linkedin ~/Downloads/Basic_LinkedInDataExport_2026-05-18 --limit 10000   # + recent DMs
+
+# Instagram → Accounts Center → Download your information → Followers and following (JSON)
+rel import-instagram ~/Downloads/instagram-yourname-2026-09-14.zip
+```
+
+- A handle **merges into the existing person** — the same human never forks into two rows, and
+  your invitations bring the message you actually wrote.
+- A **connection or a DM** is a primary observation (`linkedin.connection` 0.8,
+  `linkedin.message-exchanged` 0.85). A **follow** is not (`instagram.you-follow` 0.5), so follows
+  arrive as suggestions rather than assertions.
+- The Connections screen reports these honestly: imported, never "live" — refreshing means
+  exporting again.
+
+Built by [Phanindra Reddy](https://github.com/everyai-com) at **Saphaare Labs** · [magicteams.ai](https://magicteams.ai)
 
 ## Architecture
 

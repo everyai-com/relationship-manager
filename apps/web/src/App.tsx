@@ -118,6 +118,9 @@ export function App() {
           >
             Sign out
           </button>
+          <p className="signature" title={session.model ? `Grounded answers: ${session.model}` : undefined}>
+            {session.signature ?? "Built by Phanindra Reddy at Saphaare Labs"}
+          </p>
         </div>
       </aside>
 

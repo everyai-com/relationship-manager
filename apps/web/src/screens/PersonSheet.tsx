@@ -109,7 +109,7 @@ export function PersonSheet({
               <div className="section-label">On file</div>
               {applied.length === 0 ? (
                 <p style={{ fontSize: 13, color: "var(--gray-500)" }}>
-                  Nothing settled yet beyond the address itself.
+                  Nothing confirmed by you yet — anything in the header came from the sources, not from a decision.
                 </p>
               ) : (
                 applied.map((fact) => (
@@ -154,15 +154,23 @@ export function PersonSheet({
                 <div className="section-label">Reachable on</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)" }}>
                   {[
-                    ...detail.data.identifiers.emails.map((v) => `✉ ${v}`),
-                    ...detail.data.identifiers.phones.map((v) => `☎ ${v}`),
-                    ...detail.data.identifiers.wa_jids.map((v) => `wa ${v}`),
-                    ...detail.data.identifiers.fathom.map((v) => `call ${v}`),
-                  ].map((label) => (
-                    <span className="pill" key={label}>
-                      {label}
-                    </span>
-                  ))}
+                    ...detail.data.identifiers.emails.map((v) => ({ label: v, href: `mailto:${v}` })),
+                    ...detail.data.identifiers.phones.map((v) => ({ label: v, href: `https://wa.me/${v}` })),
+                    ...detail.data.identifiers.wa_jids.map((v) => ({ label: v, href: `https://wa.me/${v.split("@")[0]}` })),
+                    ...detail.data.identifiers.linkedin.map((v) => ({ label: `in/${v.split("/in/")[1] ?? v}`, href: v })),
+                    ...detail.data.identifiers.instagram.map((v) => ({ label: `@${v}`, href: `https://instagram.com/${v}` })),
+                    ...detail.data.identifiers.fathom.map((v) => ({ label: v, href: null })),
+                  ].map((item) =>
+                    item.href ? (
+                      <a className="pill" key={item.label} href={item.href} target="_blank" rel="noreferrer">
+                        {item.label}
+                      </a>
+                    ) : (
+                      <span className="pill" key={item.label}>
+                        {item.label}
+                      </span>
+                    ),
+                  )}
                 </div>
               </section>
             ) : null}

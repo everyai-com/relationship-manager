@@ -22,6 +22,8 @@ export interface Identifiers {
   phones: string[];
   wa_jids: string[];
   fathom: string[];
+  linkedin: string[];
+  instagram: string[];
 }
 
 export interface Identifier {
@@ -47,7 +49,7 @@ export interface Fact {
 }
 
 export interface TimelineEntry {
-  kind: "email" | "meeting" | "call" | "whatsapp";
+  kind: "email" | "meeting" | "call" | "whatsapp" | "linkedin" | "instagram";
   id: string;
   title: string;
   detail: string;

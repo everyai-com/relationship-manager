@@ -8,14 +8,25 @@ import { PersonSheet } from "./PersonSheet";
 
 type Notify = (message: string, tone?: "ok" | "error") => void;
 
+type SourceFilter = "all" | "email" | "whatsapp" | "linkedin" | "instagram";
+
+const SOURCE_FILTERS: Array<{ id: SourceFilter; label: string }> = [
+  { id: "all", label: "Everyone" },
+  { id: "email", label: "Email" },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "linkedin", label: "LinkedIn" },
+  { id: "instagram", label: "Instagram" },
+];
+
 export function PeopleScreen({ notify }: { notify: Notify }) {
   const [query, setQuery] = useState("");
   const debounced = useDebounced(query, 200);
   const [openId, setOpenId] = useState<number | null>(null);
+  const [source, setSource] = useState<SourceFilter>("all");
 
   const result = useAsync<{ people: Person[] }>(
-    () => api.tool("search_people", { query: debounced, limit: 60 }),
-    [debounced],
+    () => api.tool("search_people", { query: debounced, source: source === "all" ? undefined : source, limit: 60 }),
+    [debounced, source],
   );
 
   if (openId !== null) {
@@ -30,19 +41,32 @@ export function PeopleScreen({ notify }: { notify: Notify }) {
         <PanelHeader
           eyebrow="Workspace"
           title="People"
-          detail="Everyone you actually talk to, resolved across email, WhatsApp, calendar and calls. Values the system found carry their evidence — hover a dotted one."
+          detail="Everyone you actually talk to, resolved across email, WhatsApp, LinkedIn, Instagram, calendar and calls. Values the system found carry their evidence — hover a dotted one."
         />
 
-        <div className="search" style={{ marginBottom: "var(--space-4)" }}>
+        <div className="search" style={{ marginBottom: "var(--space-3)" }}>
           <Search size={14} />
           <input
             type="search"
             value={query}
-            placeholder="Search by name, email, company or domain"
+            placeholder="Search by name, email, company, domain or handle"
             aria-label="Search people"
             onChange={(event) => setQuery(event.target.value)}
           />
           {result.loading ? <span className="spinner" aria-hidden /> : null}
+        </div>
+
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-4)" }}>
+          {SOURCE_FILTERS.map((option) => (
+            <button
+              key={option.id}
+              className={`button tiny ${source === option.id ? "" : "secondary"}`}
+              onClick={() => setSource(option.id)}
+              aria-pressed={source === option.id}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
 
         {result.error ? (

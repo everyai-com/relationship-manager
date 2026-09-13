@@ -154,6 +154,14 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.signature {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--gray-400);
+  padding: 0 var(--space-2-5);
+  letter-spacing: 0.01em;
+}
+
 .app-main {
   display: flex;
   flex-direction: column;

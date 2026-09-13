@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  AI?: Ai;
+  AI_MODEL?: string;
   LOGIN_PASSWORD?: string;
   SESSION_SECRET?: string;
   APP_NAME?: string;

@@ -7,7 +7,7 @@
  * of the number and another did not.
  */
 
-export type IdentifierKind = "email" | "phone" | "wa_jid" | "fathom_attendee";
+export type IdentifierKind = "email" | "phone" | "wa_jid" | "fathom_attendee" | "linkedin" | "instagram";
 
 const ADDRESS_RE = /^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/;
 
@@ -86,6 +86,37 @@ export function isRobotAddress(addr: string): boolean {
   return ROBOT_HINTS.test(email);
 }
 
+/**
+ * A LinkedIn profile, canonicalised to `https://www.linkedin.com/in/<slug>`.
+ * Accepts a full URL (any country subdomain, with or without a trailing path or
+ * query), a `/in/slug` fragment, or a bare slug.
+ */
+export function normalizeLinkedIn(raw: string): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  const match = value.match(/(?:linkedin\.com)?\/in\/([^/?#\s]+)/i);
+  const slug = match?.[1] ?? (/^[\w-]+$/.test(value) ? value : "");
+  if (!slug) return "";
+  return `https://www.linkedin.com/in/${slug.replace(/\/+$/, "").toLowerCase()}`;
+}
+
+export function linkedInSlug(canonical: string): string {
+  return String(canonical ?? "").replace(/^.*\/in\//, "");
+}
+
+/**
+ * An Instagram handle, lowercased and stripped of `@`, URLs, query strings and
+ * the stories/tagged variants that exports sometimes carry.
+ */
+export function normalizeInstagram(raw: string): string {
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+  const fromUrl = value.match(/instagram\.com\/(?:stories\/)?([^/?#\s]+)/i);
+  const handle = (fromUrl?.[1] ?? value).replace(/^@/, "").replace(/\/+$/, "");
+  if (!handle || /^(p|reel|reels|explore|accounts)$/i.test(handle)) return "";
+  return handle.toLowerCase();
+}
+
 export function domainOf(email: string): string {
   const at = normalizeEmail(email).lastIndexOf("@");
   return at === -1 ? "" : normalizeEmail(email).slice(at + 1);
@@ -125,6 +156,10 @@ export function identityKey(kind: IdentifierKind, value: string): string {
       const d = decodeJid(value);
       return `wa_jid:${d ? d.jid : value.trim().toLowerCase()}`;
     }
+    case "linkedin":
+      return `linkedin:${linkedInSlug(normalizeLinkedIn(value))}`;
+    case "instagram":
+      return `instagram:${normalizeInstagram(value)}`;
     default:
       return `fathom_attendee:${(value ?? "").trim().toLowerCase()}`;
   }
