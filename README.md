@@ -152,6 +152,28 @@ npm run dev                        # Vite dev server, proxies /api → wrangler 
 npx wrangler dev                   # the API on :8787
 ```
 
+## Testing
+
+Two suites, both runnable:
+
+```bash
+npm test                                  # unit: the evidence ledger and identity resolution
+REL_API=… REL_KEY=… REL_PASSWORD=… npm run test:e2e
+```
+
+`tests/e2e.mjs` runs **against a real deployment** — no mocks. It covers auth and session
+forgery, agent key scopes (a read key must be denied on every write tool *and* that denial must
+reach the call log), the kill switch, the evidence law end to end (weak evidence stores nothing,
+medium becomes a suggestion, strong is applied; a human decision freezes the field; a dismissed
+value never returns), the reconnect queue's suppression rules, LinkedIn/Instagram imports
+(including that a re-import merges rather than forks), the Workers AI tools (including that the
+model says *"the record doesn't say"* instead of inventing), the MCP protocol (tools/list matches
+the REST catalogue exactly), and the web shell.
+
+It is written to be re-runnable: each run writes fresh fact values, so a second run tests the
+behaviour rather than the first run's leftovers. It creates one clearly-labelled person
+(`ZZ E2E Probe`) and prints the SQL to remove it.
+
 ## Connect an agent
 
 ```bash
@@ -192,8 +214,8 @@ MIT — see [LICENSE](./LICENSE).
 - [plainsync](https://github.com/everyai-com/plainsync) — local-first Markdown workspace for humans + agents
 - [argus](https://github.com/everyai-com/argus) — cloud-native software verification
 
-Built by [Phanindra Reddy](https://github.com/everyai-com) · [magicteams.ai](https://magicteams.ai)
+Built by [Phanindra Reddy](https://github.com/everyai-com) at **Saphaare Labs** · [magicteams.ai](https://magicteams.ai)
 
 ## License
 
-Apache-2.0 — see [LICENSE](./LICENSE).
+MIT — see [LICENSE](./LICENSE).

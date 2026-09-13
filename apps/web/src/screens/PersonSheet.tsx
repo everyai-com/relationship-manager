@@ -182,7 +182,7 @@ export function PersonSheet({
         <PanelHeader
           eyebrow="History"
           title="Recent"
-          detail="Email, meetings, recorded calls and WhatsApp in one chronology — the ground truth for when you last spoke."
+          detail="Email, meetings, recorded calls, WhatsApp and LinkedIn in one chronology — the ground truth for when you last spoke."
         />
         {timeline.error ? (
           <ErrorRetry message={timeline.error} onRetry={timeline.reload} />

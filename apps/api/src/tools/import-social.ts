@@ -173,6 +173,7 @@ export async function importSocialExport(ctx: ToolContext, args: Record<string, 
 
   // ---- 3. resolve people (create the new ones in one pass) ----------------
   const assigned = new Map<number, Entry>();
+  const matchedExisting = new Set<number>();
   const links: Array<{ personId: number; handle: { kind: IdentifierKind; value: string } }> = [];
   const toCreate: Array<{ entry: Entry }> = [];
 
@@ -196,10 +197,13 @@ export async function importSocialExport(ctx: ToolContext, args: Record<string, 
       toCreate.push({ entry });
       continue;
     }
-    if (assigned.has(personId)) counts.people_merged += 1;
+    // Matched someone already in the graph. Counted per person, not per entry,
+    // so re-importing does not inflate the number.
     assigned.set(personId, entry);
+    matchedExisting.add(personId);
     link(personId, entry);
   }
+  counts.people_merged = matchedExisting.size;
 
   const createdIds = await createPeople(toCreate.map(({ entry }) => ({ handles: entry.handles, name: entry.name, email: entry.email })));
   createdIds.forEach((personId, index) => {

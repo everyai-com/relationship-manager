@@ -8,6 +8,8 @@ export interface DispatchResult {
   ok: boolean;
   result?: unknown;
   error?: string;
+  /** HTTP status for REST surfaces: 403 for authority, 400 for a bad request. */
+  status?: number;
   meta?: { tool: string; scope: string; duration_ms: number; band?: string };
 }
 
@@ -51,24 +53,24 @@ export async function callTool(opts: {
   const tool = TOOL_BY_NAME.get(name);
   if (!tool) {
     await log("error", "unknown tool");
-    return { ok: false, error: `unknown tool: ${name}` };
+    return { ok: false, error: `unknown tool: ${name}`, status: 400 };
   }
 
   if (opts.paused && principal.kind === "agent") {
     await log("denied", "agents paused");
-    return { ok: false, error: "agents are paused — a human turned agent access off" };
+    return { ok: false, error: "agents are paused — a human turned agent access off", status: 403 };
   }
 
   if (tool.scope === "write" && !hasScope(principal, "write")) {
     await log("denied", "missing write scope");
-    return { ok: false, error: `this key has no write scope, so ${name} was denied` };
+    return { ok: false, error: `this key has no write scope, so ${name} was denied`, status: 403 };
   }
 
   const parsed = z.object(tool.input).safeParse(opts.args ?? {});
   if (!parsed.success) {
     const detail = parsed.error.issues.map((i) => `${i.path.join(".") || "input"}: ${i.message}`).join("; ");
     await log("error", detail);
-    return { ok: false, error: `invalid input — ${detail}` };
+    return { ok: false, error: `invalid input — ${detail}`, status: 400 };
   }
 
   try {
@@ -82,6 +84,15 @@ export async function callTool(opts: {
       },
       parsed.data as Record<string, unknown>,
     );
+
+    // A handler reporting `{ error }` is a failure, not a successful payload —
+    // otherwise an agent sees ok:true and reports the error as data.
+    const reported = (result as { error?: unknown } | null)?.error;
+    if (typeof reported === "string" && reported.trim()) {
+      await log("error", reported);
+      return { ok: false, error: reported, status: 400 };
+    }
+
     const band = (result as { band?: string } | null)?.band;
     await log("ok");
     return {
@@ -92,6 +103,6 @@ export async function callTool(opts: {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await log("error", message);
-    return { ok: false, error: message };
+    return { ok: false, error: message, status: 500 };
   }
 }

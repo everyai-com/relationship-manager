@@ -141,27 +141,34 @@ async function personDetail(db: D1Like, id: number) {
   );
   const identifiers = (await identifiersFor(db, [id]))[id] ?? emptyIdentifiers();
 
-  const like = `%${person.email}%`;
-  // Handles live in the same message table (LinkedIn DMs store the profile URL
-  // as the from/to address), so a person's history is one query away.
+  // Only match mail when we actually have an address. An empty address would
+  // build the pattern '%%', which matches every message in the graph — that is
+  // how a LinkedIn-only person ended up with someone else's inbox in their
+  // timeline.
+  const emailLike = person.email.trim() ? `%${person.email.trim()}%` : "";
   const socials = [...identifiers.linkedin, ...identifiers.instagram];
   const socialClause = socials.length ? ` OR from_addr IN (${socials.map(() => "?").join(",")}) OR to_addr IN (${socials.map(() => "?").join(",")})` : "";
   const socialParams = socials.length ? [...socials, ...socials] : [];
 
-  const messages = await all<Record<string, unknown>>(
-    db,
-    `SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date, service FROM messages
-     WHERE (from_addr LIKE ? OR to_addr LIKE ?${socialClause}) ORDER BY internal_date DESC LIMIT 20`,
-    like,
-    like,
-    ...socialParams,
-  );
-  const events = await all<Record<string, unknown>>(
-    db,
-    "SELECT id, title, start_at, end_at, attendees, organizer FROM events WHERE attendees LIKE ? OR organizer LIKE ? ORDER BY start_at DESC LIMIT 10",
-    like,
-    like,
-  );
+  const messages = emailLike
+    ? await all<Record<string, unknown>>(
+        db,
+        `SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date, service FROM messages
+         WHERE (from_addr LIKE ? OR to_addr LIKE ?${socialClause}) ORDER BY internal_date DESC LIMIT 20`,
+        emailLike,
+        emailLike,
+        ...socialParams,
+      )
+    : [];
+
+  const events = emailLike
+    ? await all<Record<string, unknown>>(
+        db,
+        "SELECT id, title, start_at, end_at, attendees, organizer FROM events WHERE attendees LIKE ? OR organizer LIKE ? ORDER BY start_at DESC LIMIT 10",
+        emailLike,
+        emailLike,
+      )
+    : [];
 
   return {
     person: { ...person, identifiers, human_fields: safeJsonArray(person.human_fields) },
@@ -502,17 +509,20 @@ export const handlers: ToolHandlers = {
     const person = await personOr404(ctx.db, id);
     if (!person) return { error: "person not found" };
     const ids = (await identifiersFor(ctx.db, [id]))[id] ?? emptyIdentifiers();
-    const like = `%${person.email}%`;
+    const emailLike = person.email.trim() ? `%${person.email.trim()}%` : "";
 
     const entries: Array<Record<string, unknown>> = [];
 
-    for (const m of await all<Record<string, unknown>>(
-      ctx.db,
-      "SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date, service FROM messages WHERE service = 'gmail' AND (from_addr LIKE ? OR to_addr LIKE ?) ORDER BY internal_date DESC LIMIT ?",
-      like,
-      like,
-      limit,
-    )) {
+    const emailRows = emailLike
+      ? await all<Record<string, unknown>>(
+          ctx.db,
+          "SELECT id, thread_id, subject, snippet, from_addr, to_addr, internal_date, service FROM messages WHERE service = 'gmail' AND (from_addr LIKE ? OR to_addr LIKE ?) ORDER BY internal_date DESC LIMIT ?",
+          emailLike,
+          emailLike,
+          limit,
+        )
+      : [];
+    for (const m of emailRows) {
       entries.push({
         kind: "email",
         id: m.id,
@@ -524,13 +534,16 @@ export const handlers: ToolHandlers = {
       });
     }
 
-    for (const e of await all<Record<string, unknown>>(
-      ctx.db,
-      "SELECT id, title, start_at, attendees, organizer, link FROM events WHERE attendees LIKE ? OR organizer LIKE ? ORDER BY start_at DESC LIMIT ?",
-      like,
-      like,
-      limit,
-    )) {
+    const eventRows = emailLike
+      ? await all<Record<string, unknown>>(
+          ctx.db,
+          "SELECT id, title, start_at, attendees, organizer, link FROM events WHERE attendees LIKE ? OR organizer LIKE ? ORDER BY start_at DESC LIMIT ?",
+          emailLike,
+          emailLike,
+          limit,
+        )
+      : [];
+    for (const e of eventRows) {
       entries.push({
         kind: "meeting",
         id: e.id,
@@ -839,10 +852,15 @@ export const handlers: ToolHandlers = {
     }
 
     await run(ctx.db, "UPDATE person_facts SET status = 'APPLIED', updated_at = ? WHERE id = ?", ctx.now, factId);
+
+    // Accepting a suggestion freezes that field for good — for every field, not
+    // just the ones that live on the person row, so an agent can never overwrite
+    // a value the human settled.
+    const person = await personOr404(ctx.db, fact.person_id);
+    const humanFields = person ? safeJsonArray(person.human_fields) : [];
+    if (!humanFields.includes(fact.field)) humanFields.push(fact.field);
+
     if (ROW_FIELDS.has(fact.field)) {
-      const person = await personOr404(ctx.db, fact.person_id);
-      const humanFields = person ? safeJsonArray(person.human_fields) : [];
-      if (!humanFields.includes(fact.field)) humanFields.push(fact.field);
       await run(
         ctx.db,
         `UPDATE people SET ${fact.field} = ?, human_fields = ?, updated_at = ? WHERE id = ?`,
@@ -851,8 +869,16 @@ export const handlers: ToolHandlers = {
         ctx.now,
         fact.person_id,
       );
+    } else {
+      await run(
+        ctx.db,
+        "UPDATE people SET human_fields = ?, updated_at = ? WHERE id = ?",
+        JSON.stringify(humanFields),
+        ctx.now,
+        fact.person_id,
+      );
     }
-    return { status: "APPLIED" };
+    return { status: "APPLIED", frozen: fact.field };
   },
 
   async log_outreach(ctx, args) {

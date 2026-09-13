@@ -19,6 +19,7 @@
     "seed:push": "for f in packages/seed/out/seed-*.sql; do wrangler d1 execute relationship-manager --remote --file \"$f\"; done",
     "typecheck": "tsc -p tsconfig.base.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "npm run test --workspace @rel/core",
+    "test:e2e": "node tests/e2e.mjs",
     "rel": "tsx packages/cli/src/index.ts",
     "rel:mcp": "tsx packages/cli/src/mcp-stdio.ts"
   },

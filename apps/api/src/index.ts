@@ -182,7 +182,7 @@ async function apiRoute(req: Request, env: Env, url: URL): Promise<Response> {
     const body = await readJson<Record<string, unknown>>(req);
     const paused = await agentsPaused(env);
     const res = await callTool({ db: env.DB, principal, name, args: body ?? {}, paused, ai: aiFrom(env) });
-    return json(res, { status: res.ok ? 200 : res.error?.includes("denied") ? 403 : 400 });
+    return json(res, { status: res.ok ? 200 : (res.status ?? 400) });
   }
 
   if (path === "/api/agents" && method === "GET") {
