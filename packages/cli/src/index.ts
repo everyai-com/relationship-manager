@@ -58,6 +58,20 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 const bold = (s: string) => `\u001b[1m${s}\u001b[0m`;
 const dim = (s: string) => `\u001b[2m${s}\u001b[0m`;
 
+/** "3d ago" — good enough for a terminal column. */
+function relativeDay(iso?: string | null): string {
+  if (!iso) return "";
+  const value = String(iso).slice(0, 10);
+  const then = Date.parse(`${value}T00:00:00Z`);
+  if (Number.isNaN(then)) return value;
+  const days = Math.round((Date.now() - then) / 86_400_000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.round(days / 30)}mo ago`;
+  return `${Math.round(days / 365)}y ago`;
+}
+
 function printPeople(result: unknown, json: boolean) {
   if (json) return console.log(JSON.stringify(result, null, 2));
   const people = (result as { people?: Array<Record<string, unknown>> }).people ?? [];
@@ -237,6 +251,31 @@ async function main() {
       if (!path) throw new Error("usage: rel import-instagram <path to the export folder or .zip>");
       return pushExport(parseInstagramExport(path));
     }
+    case "board": {
+      const result = await callTool("pipeline_board", { query: flags.query, per_stage: Number(flags.per ?? 10) });
+      if (json) return console.log(JSON.stringify(result, null, 2));
+      const board = result as { stages: Array<{ stage: string; total: number; people: Array<Record<string, unknown>> }>; unstaged: number };
+      for (const column of board.stages) {
+        console.log(`\n${bold(column.stage)} ${dim(`(${column.total})`)}`);
+        if (column.people.length === 0) console.log(dim("  nobody"));
+        for (const person of column.people) {
+          const meta = [person.company || person.company_domain, person.last_touch ? relativeDay(String(person.last_touch)) : null]
+            .filter(Boolean)
+            .join(" · ");
+          console.log(`  ${String(person.id).padStart(6)}  ${String(person.name || person.email).padEnd(28)} ${dim(meta)}`);
+        }
+        if (column.total > column.people.length) console.log(dim(`  … ${column.total - column.people.length} more`));
+      }
+      console.log(dim(`\n${board.unstaged} people are not in the pipeline`));
+      return;
+    }
+    case "move": {
+      const personId = Number(positional[0]);
+      const stage = positional.slice(1).join(" ");
+      if (!personId) throw new Error('usage: rel move <personId> "<stage>" (empty string removes them)');
+      const result = await callTool("set_person_stage", { person_id: personId, stage });
+      return console.log(JSON.stringify(result, null, 2));
+    }
     case "propose": {
       const result = await callTool("propose_outreach", {
         person_id: Number(positional[0]),
@@ -258,6 +297,8 @@ async function main() {
           `  ${bold("timeline")} <id>                  email, meetings, calls, WhatsApp`,
           `  ${bold("facts")} [--status PROPOSED]      what is settled, what needs your call`,
           `  ${bold("reconnect")} [--cohort X]         who is worth a second conversation`,
+          `  ${bold("board")} [--query X]           the pipeline, grouped by stage`,
+          `  ${bold("move")} <id> "<stage>"        move someone (empty string removes them)`,
           `  ${bold("connections")}                    how fresh each source is`,
           `  ${bold("decide")} <factId> accept|dismiss`,
           `  ${bold("import-linkedin")} <path>          official LinkedIn export (Connections/Invitations/messages)`,

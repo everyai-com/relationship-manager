@@ -424,6 +424,53 @@ await test("a resolved fact cannot be re-decided", async () => {
   return "guarded";
 });
 
+section("the pipeline board");
+await test("a person can be moved into a stage", async () => {
+  const out = await toolOk("set_person_stage", { person_id: probe.id, stage: "Meeting" }, writeKey);
+  assert(out.stage === "Meeting", `stage is ${out.stage}`);
+  assert(/Moved to Meeting/.test(out.note), `note: ${out.note}`);
+  return out.note;
+});
+
+await test("the board shows them in that column", async () => {
+  const board = await toolOk("pipeline_board", { per_stage: 100 });
+  const column = board.stages.find((stage) => stage.stage === "Meeting");
+  assert(column, "no Meeting column");
+  assert(column.people.some((person) => person.id === probe.id), "the moved person is not on the board");
+  assert(column.total >= 1, `column total is ${column.total}`);
+  return `Meeting: ${column.total} people`;
+});
+
+await test("the stage filter finds them", async () => {
+  const { people } = await toolOk("search_people", { query: "ZZ E2E Probe", stage: "Meeting", limit: 5 });
+  assert(people.some((person) => person.id === probe.id), "stage filter missed them");
+  const other = await toolOk("search_people", { query: "ZZ E2E Probe", stage: "Won", limit: 5 });
+  assert(!other.people.some((person) => person.id === probe.id), "they appear in a stage they are not in");
+});
+
+await test("an unknown stage is refused", async () => {
+  const out = await tool("set_person_stage", { person_id: probe.id, stage: "Definitely not a stage" }, writeKey);
+  assert(/unknown stage/.test(out.error ?? ""), `unexpected: ${out.error}`);
+  const person = await toolOk("get_person", { person_id: probe.id });
+  assert(person.person.stage === "Meeting", "a refused move changed the stage anyway");
+  return "rejected, stage unchanged";
+});
+
+await test("taking someone out of the pipeline works", async () => {
+  const out = await toolOk("set_person_stage", { person_id: probe.id, stage: "" }, writeKey);
+  assert(out.stage === null, "stage not cleared");
+  const board = await toolOk("pipeline_board", { per_stage: 100 });
+  const everywhere = board.stages.flatMap((stage) => stage.people.map((person) => person.id));
+  assert(!everywhere.includes(probe.id), "they are still on the board after being removed");
+  return "removed";
+});
+
+await test("moving someone needs the write scope", async () => {
+  const out = await tool("set_person_stage", { person_id: probe.id, stage: "Ready" }, readKey);
+  assert(out.status === 403, `expected 403, got ${out.status}`);
+  return out.error;
+});
+
 section("outreach is recorded, never sent");
 await test("log_outreach records an attempt with a review date", async () => {
   const out = await toolOk("log_outreach", { person_id: probe.id, channel: "email", subject: "E2E check-in", body: "hello", followup_at: "2026-09-20" }, writeKey);

@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import { api, ApiError, type Overview, type SessionInfo } from "./lib/api";
 import { useAsync } from "./lib/useAsync";
 import { TodayScreen } from "./screens/TodayScreen";
 import { PeopleScreen } from "./screens/PeopleScreen";
+import { PipelineScreen } from "./screens/PipelineScreen";
 import { ReconnectScreen } from "./screens/ReconnectScreen";
 import { ConnectionsScreen } from "./screens/ConnectionsScreen";
 import { AgentsScreen } from "./screens/AgentsScreen";
 import { AuthScreen } from "./screens/AuthScreen";
+import { PersonDetail } from "./screens/PersonDetail";
+import { CommandPalette, type ScreenId } from "./components/CommandPalette";
 import { LoadingLine, Toast } from "./components/ui";
 
-type Screen = "today" | "people" | "reconnect" | "connections" | "agents";
-
-const NAV: Array<{ id: Screen; label: string; group: string }> = [
+const NAV: Array<{ id: ScreenId; label: string; group: string }> = [
   { id: "today", label: "Today", group: "Workspace" },
   { id: "people", label: "People", group: "Workspace" },
+  { id: "pipeline", label: "Pipeline", group: "Workspace" },
   { id: "reconnect", label: "Reconnect", group: "Workspace" },
   { id: "connections", label: "Connections", group: "Setup" },
   { id: "agents", label: "Agents", group: "Setup" },
@@ -22,7 +25,9 @@ const NAV: Array<{ id: Screen; label: string; group: string }> = [
 export function App() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [checked, setChecked] = useState(false);
-  const [screen, setScreen] = useState<Screen>("today");
+  const [screen, setScreen] = useState<ScreenId>("today");
+  const [openPerson, setOpenPerson] = useState<number | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("rel-theme") as "light" | "dark" | null) ?? "light",
   );
@@ -41,6 +46,23 @@ export function App() {
       .finally(() => setChecked(true));
   }, []);
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((value) => !value);
+      }
+      if (event.key === "/" && !paletteOpen) {
+        const target = event.target as HTMLElement | null;
+        if (target && /input|textarea|select/i.test(target.tagName)) return;
+        event.preventDefault();
+        setPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [paletteOpen]);
+
   const notify = useCallback((message: string, tone: "ok" | "error" = "ok") => {
     setToast({ message, tone });
     window.setTimeout(() => setToast(null), 4000);
@@ -49,7 +71,7 @@ export function App() {
   const overview = useAsync<Overview>(() => api.overview(), [session?.authed, screen]);
 
   const counts = overview.data?.counts;
-  const badges: Partial<Record<Screen, number>> = {
+  const badges: Partial<Record<ScreenId, number>> = {
     people: counts?.proposed,
     reconnect: counts?.reconnectReady,
     agents: counts?.agents24h,
@@ -88,6 +110,14 @@ export function App() {
           </span>
         </div>
 
+        <button className="nav-item" onClick={() => setPaletteOpen(true)} style={{ marginBottom: "var(--space-2)" }}>
+          <Search size={13} />
+          Search
+          <span className="nav-count">
+            <kbd>⌘K</kbd>
+          </span>
+        </button>
+
         {groups.map((group) => (
           <div key={group}>
             <div className="nav-group-label">{group}</div>
@@ -95,7 +125,10 @@ export function App() {
               <button
                 key={item.id}
                 className={`nav-item${screen === item.id ? " active" : ""}`}
-                onClick={() => setScreen(item.id)}
+                onClick={() => {
+                  setScreen(item.id);
+                  setOpenPerson(null);
+                }}
               >
                 {item.label}
                 {badges[item.id] ? <span className="nav-count">{badges[item.id]}</span> : null}
@@ -126,9 +159,7 @@ export function App() {
 
       <main className="app-main">
         <div className="topbar">
-          <span className="topbar-title">
-            {NAV.find((item) => item.id === screen)?.label ?? "Workspace"}
-          </span>
+          <span className="topbar-title">{NAV.find((item) => item.id === screen)?.label ?? "Workspace"}</span>
           <div className="topbar-right">
             {overview.data?.stale.length ? (
               <span className="pill warning" title="Some sources have not synced in a while">
@@ -143,15 +174,44 @@ export function App() {
         </div>
 
         <div className="app-body">
-          {screen === "today" ? <TodayScreen overview={overview} notify={notify} onGoTo={setScreen} /> : null}
-          {screen === "people" ? <PeopleScreen notify={notify} /> : null}
+          {screen === "today" ? (
+            <TodayScreen
+              overview={overview}
+              notify={notify}
+              onGoTo={(next) => setScreen(next)}
+            />
+          ) : null}
+          {screen === "people" ? (
+            <PeopleScreen
+              notify={notify}
+              onOpenPerson={setOpenPerson}
+              onGoToPipeline={() => setScreen("pipeline")}
+            />
+          ) : null}
+          {screen === "pipeline" ? <PipelineScreen notify={notify} onOpenPerson={setOpenPerson} /> : null}
           {screen === "reconnect" ? <ReconnectScreen notify={notify} /> : null}
           {screen === "connections" ? <ConnectionsScreen /> : null}
           {screen === "agents" ? <AgentsScreen notify={notify} /> : null}
         </div>
-      </main>
 
-      {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
+        {openPerson ? (
+          <PersonDetail
+            personId={openPerson}
+            notify={notify}
+            onClose={() => setOpenPerson(null)}
+            onStageChanged={overview.reload}
+          />
+        ) : null}
+
+        <CommandPalette
+          open={paletteOpen}
+          onClose={() => setPaletteOpen(false)}
+          onNavigate={(next) => setScreen(next)}
+          onOpenPerson={(id) => setOpenPerson(id)}
+        />
+
+        {toast ? <Toast message={toast.message} tone={toast.tone} onDismiss={() => setToast(null)} /> : null}
+      </main>
     </div>
   );
 }

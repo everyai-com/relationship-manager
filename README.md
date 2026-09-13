@@ -19,6 +19,23 @@ and *deciding who to reach out to*.
 
 ---
 
+## The surfaces
+
+- **Today** — what needs you now: facts awaiting a decision, follow-ups that have come due, sources
+  that have gone quiet, and what agents did in the last day.
+- **People** — search, filter by source or pipeline stage, and **expand a profile in place** to see
+  what is known, what needs your call, and the last few things that happened. `⌘K` searches from
+  anywhere.
+- **Pipeline** — a **kanban board** of where each relationship stands. Drag a card to move someone;
+  the move is optimistic and rolls back with a message if the write is refused.
+- **Profile drawer** — clicking through opens the full record beside the list rather than replacing
+  it: overview, history, and the deterministic brief, with the stage selector and the evidence
+  behind every value.
+- **Reconnect** — the ranked queue with the signal that put each person there; suppressed holds stay
+  out unless you ask.
+- **Connections** — where the graph came from and how fresh it is.
+- **Agents** — the MCP endpoint, keys, the tool catalogue, the call log and the kill switch.
+
 ## What it does
 
 - **Resolves identity across sources.** `person_identifiers` is the authoritative index — email,

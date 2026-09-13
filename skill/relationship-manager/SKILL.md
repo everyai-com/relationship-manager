@@ -27,6 +27,11 @@ rel timeline 405               # when did we actually last talk
 rel reconnect --cohort "Researched opportunity"
 rel connections                # how fresh is this data, honestly
 
+# the pipeline — where each relationship stands
+rel board                      # the board, grouped by stage
+rel board --query lucidway     # filtered
+rel move 405 "Meeting"         # move someone; "" takes them out of the pipeline
+
 # imports (official exports only)
 rel import-linkedin <path> [--limit N]   # Connections + Invitations + DMs
 rel import-instagram <path|.zip>         # followers + following

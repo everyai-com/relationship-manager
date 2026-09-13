@@ -15,6 +15,24 @@ export interface ToolDef {
 
 const PERSON_ID = z.number().int().positive().describe("Person id from search_people.");
 
+/**
+ * The stages a person can sit in. Deliberately the same vocabulary as the CRM
+ * this graph inherited, so the stages that came across mean something.
+ */
+export const PIPELINE_STAGES = [
+  "Needs review",
+  "Ready",
+  "Contacted",
+  "Replied",
+  "Meeting",
+  "Proposal",
+  "Won",
+  "On hold",
+  "Closed",
+] as const;
+
+export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
 export const TOOLS: ToolDef[] = [
   {
     name: "search_people",
@@ -31,6 +49,7 @@ export const TOOLS: ToolDef[] = [
         .enum(["email", "whatsapp", "linkedin", "instagram", "phone", "fathom"])
         .optional()
         .describe("Only people reachable on this kind of handle."),
+      stage: z.string().optional().describe("Only people in this pipeline stage."),
       limit: z.number().int().min(1).max(200).optional().describe("Max results, default 25."),
     },
   },
@@ -128,6 +147,29 @@ export const TOOLS: ToolDef[] = [
       "Who built this, what it is, and what is in the graph right now. Call it when the user asks who made this, what " +
       "this connects to, or how much the system knows.",
     input: {},
+  },
+  {
+    name: "pipeline_board",
+    scope: "read",
+    description:
+      "The pipeline: people grouped by the stage the user has placed them in, newest activity first inside each column. " +
+      "Only people who have been placed appear — an empty stage means nobody is in it, not that nobody matches. Use it " +
+      "to answer 'where does this stand' and 'what has moved'.",
+    input: {
+      query: z.string().optional().describe("Only people matching this name, company or domain."),
+      per_stage: z.number().int().min(1).max(200).optional().describe("Cards per column, default 40."),
+    },
+  },
+  {
+    name: "set_person_stage",
+    scope: "write",
+    description:
+      `Move a person to a pipeline stage. Stages: ${PIPELINE_STAGES.join(" · ")}. Use "" to take them out of the ` +
+      "pipeline entirely. This records where a relationship stands; it does not send anything.",
+    input: {
+      person_id: PERSON_ID,
+      stage: z.string().max(40).describe('One of the stages, or "" to remove them from the pipeline.'),
+    },
   },
   {
     name: "import_social_export",

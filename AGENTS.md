@@ -59,18 +59,20 @@ a strong evidence kind.
 
 | Tool | Scope | Input | Notes |
 |---|---|---|---|
-| `search_people` | read | `query?`, `source?`, `limit?` | name, email, company, domain or any handle; `source` filters to linkedin/instagram/email/whatsapp |
+| `search_people` | read | `query?`, `source?`, `stage?`, `limit?` | name, email, company, domain or any handle; `source` filters to linkedin/instagram/email/whatsapp; `stage` filters the pipeline |
 | `get_person` | read | `person_id` | facts carry `band`, `evidence[]`, `reasons[]` |
 | `prep_brief` | read | `person_id` | markdown; deterministic, no model spent |
 | `person_timeline` | read | `person_id`, `limit?` | merged and time-ordered, including LinkedIn DMs |
 | `list_facts` | read | `status?` = `PROPOSED` \| `APPLIED`, `limit?` | `PROPOSED` = awaiting the human |
 | `reconnect_queue` | read | `cohort?`, `limit?` | suppressed people never appear |
+| `pipeline_board` | read | `query?`, `per_stage?` | people grouped by stage, with counts |
 | `connection_status` | read | — | per source: status, last sync, item count (includes the Workers AI row) |
 | `ask_about_person` | read | `person_id`, `question?` | Workers AI, grounded on that person's record only |
 | `daily_brief` | read | `focus?` | Workers AI brief from follow-ups, proposals and the queue |
 | `about` | read | — | who built this, what it knows, live counts |
 | `record_fact` | write | `person_id`, `field`, `value`, `evidence[]`, `source_url?` | evidence law applies |
 | `decide_fact` | write | `fact_id`, `decision` = `accept` \| `dismiss` | human-facing, but safe to call on the user's instruction |
+| `set_person_stage` | write | `person_id`, `stage` | `Needs review`, `Ready`, `Contacted`, `Replied`, `Meeting`, `Proposal`, `Won`, `On hold`, `Closed`, or `""` to remove |
 | `import_social_export` | write | `source`, `people[]`, `messages[]`, `self_handles[]` | official LinkedIn/Instagram exports; merges, never forges |
 | `log_outreach` | write | `person_id`, `channel`, `body`, `followup_at?` | records; does not send |
 | `propose_outreach` | write | `person_id`, `channel`, `subject?`, `body` | queued for approval |

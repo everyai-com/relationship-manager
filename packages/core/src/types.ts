@@ -9,6 +9,7 @@ export interface Person {
   company: string;
   company_domain: string;
   location: string;
+  stage: string;
   last_touch: string | null;
   first_seen: string | null;
   message_count: number;

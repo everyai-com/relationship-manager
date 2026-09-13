@@ -62,12 +62,37 @@ export interface Person {
   company: string;
   company_domain: string;
   location: string;
+  stage: string;
   last_touch: string | null;
   first_seen: string | null;
   message_count: number;
   meeting_count: number;
   proposed_count?: number;
   identifiers?: Identifiers;
+}
+
+export interface BoardCard {
+  id: number;
+  name: string;
+  email: string;
+  title: string;
+  company: string;
+  company_domain: string;
+  last_touch: string | null;
+  message_count: number;
+  meeting_count: number;
+  stage: string;
+}
+
+export interface BoardStage {
+  stage: string;
+  total: number;
+  people: BoardCard[];
+}
+
+export interface Board {
+  stages: BoardStage[];
+  unstaged: number;
 }
 
 export interface Fact {
@@ -87,7 +112,7 @@ export interface Fact {
 }
 
 export interface TimelineEntry {
-  kind: "email" | "meeting" | "call" | "whatsapp";
+  kind: "email" | "meeting" | "call" | "whatsapp" | "linkedin" | "instagram";
   id: string;
   title: string;
   detail: string;
@@ -192,6 +217,13 @@ export const api = {
   overview: () => request<Overview>("/api/overview"),
   tool,
   catalog: () => request<{ tools: ToolCatalogEntry[] }>("/api/tools"),
+  board: (perStage = 40, query = "") =>
+    tool<Board>("pipeline_board", { per_stage: perStage, query: query || undefined }),
+  setStage: (personId: number, stage: string) =>
+    tool<{ person_id: number; name: string; stage: string | null; note: string }>("set_person_stage", {
+      person_id: personId,
+      stage,
+    }),
   agents: () => request<{ keys: AgentKey[]; paused: boolean }>("/api/agents"),
   createAgent: (name: string, scopes: "read" | "write") =>
     request<{ key: string; name: string; scopes: string; note: string }>("/api/agents", {

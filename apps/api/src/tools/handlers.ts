@@ -5,6 +5,7 @@ import {
   normalizeInstagram,
   normalizeLinkedIn,
   normalizePhone,
+  PIPELINE_STAGES,
   ROW_FIELDS,
   scoreEvidence,
   SIGNATURE,
@@ -103,6 +104,7 @@ interface PersonRow {
   company: string;
   company_domain: string;
   location: string;
+  stage?: string;
   human_fields: string;
   last_touch: string | null;
   first_seen: string | null;
@@ -118,6 +120,8 @@ function shapeRow(r: PersonRow & { proposed_count: number }) {
     title: r.title,
     company: r.company,
     company_domain: r.company_domain,
+    location: r.location,
+    stage: r.stage ?? "",
     last_touch: r.last_touch,
     first_seen: r.first_seen,
     message_count: r.message_count,
@@ -378,6 +382,10 @@ export const handlers: ToolHandlers = {
       : "";
     const sourceParam = sourceKind ? [sourceKind] : [];
 
+    const stage = args.stage === undefined ? null : String(args.stage).trim();
+    const stageClause = stage !== null ? (stage === "" ? " AND p.stage = ''" : " AND p.stage = ?") : "";
+    const stageParam = stage ? [stage] : [];
+
     if (!query) {
       // No query means "who have I been talking to lately" — the natural first
       // question, and the only one an agent can ask without a keyword.
@@ -385,10 +393,11 @@ export const handlers: ToolHandlers = {
         ctx.db,
         `SELECT p.*, (SELECT COUNT(*) FROM person_facts f WHERE f.person_id = p.id AND f.status = 'PROPOSED') AS proposed_count
          FROM people p
-         WHERE p.last_touch IS NOT NULL${sourceClause}
+         WHERE p.last_touch IS NOT NULL${sourceClause}${stageClause}
          ORDER BY p.last_touch DESC
          LIMIT ?`,
         ...sourceParam,
+        ...stageParam,
         limit,
       );
       const ids = await identifiersFor(ctx.db, rows.map((r) => r.id));
@@ -403,7 +412,7 @@ export const handlers: ToolHandlers = {
       `SELECT p.*, (SELECT COUNT(*) FROM person_facts f WHERE f.person_id = p.id AND f.status = 'PROPOSED') AS proposed_count
        FROM people p
        WHERE (p.name LIKE ? OR p.email LIKE ? OR p.company LIKE ? OR p.company_domain LIKE ?
-              OR EXISTS (SELECT 1 FROM person_identifiers pi WHERE pi.person_id = p.id AND pi.value LIKE ?))${sourceClause}
+              OR EXISTS (SELECT 1 FROM person_identifiers pi WHERE pi.person_id = p.id AND pi.value LIKE ?))${sourceClause}${stageClause}
        ORDER BY (p.last_touch IS NULL), p.last_touch DESC, p.name
        LIMIT ?`,
       like,
@@ -412,6 +421,7 @@ export const handlers: ToolHandlers = {
       like,
       like,
       ...sourceParam,
+      ...stageParam,
       limit,
     );
     const ids = await identifiersFor(ctx.db, rows.map((r) => r.id));
@@ -822,6 +832,92 @@ export const handlers: ToolHandlers = {
       evidence,
       args.source_url ? String(args.source_url) : null,
     );
+  },
+
+  /**
+   * The pipeline board. One windowed query rather than a query per column, and
+   * counts so an agent knows what it is not seeing.
+   */
+  async pipeline_board(ctx, args) {
+    const perStage = Math.min(Number(args.per_stage ?? 40) || 40, 200);
+    const query = String(args.query ?? "").trim();
+    const like = `%${query}%`;
+
+    const cards = query
+      ? await all<PersonRow & { rn: number }>(
+          ctx.db,
+          `SELECT * FROM (
+             SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.stage ORDER BY (p.last_touch IS NULL), p.last_touch DESC) AS rn
+             FROM people p
+             WHERE p.stage <> '' AND (p.name LIKE ? OR p.email LIKE ? OR p.company LIKE ? OR p.company_domain LIKE ?)
+           ) WHERE rn <= ?`,
+          like,
+          like,
+          like,
+          like,
+          perStage,
+        )
+      : await all<PersonRow & { rn: number }>(
+          ctx.db,
+          `SELECT * FROM (
+             SELECT p.*, ROW_NUMBER() OVER (PARTITION BY p.stage ORDER BY (p.last_touch IS NULL), p.last_touch DESC) AS rn
+             FROM people p
+             WHERE p.stage <> ''
+           ) WHERE rn <= ?`,
+          perStage,
+        );
+
+    const counts = await all<{ stage: string; n: number }>(
+      ctx.db,
+      "SELECT stage, COUNT(*) AS n FROM people WHERE stage <> '' GROUP BY stage",
+    );
+    const byStage = new Map(counts.map((row) => [row.stage, row.n]));
+
+    // The canonical stages first, then anything else the data actually holds —
+    // the import carried an "Excluded" stage, and hiding people who exist would
+    // be worse than an extra column.
+    const extra = counts.map((row) => row.stage).filter((stage) => !(PIPELINE_STAGES as readonly string[]).includes(stage));
+    const ordered = [...PIPELINE_STAGES, ...extra.sort()];
+
+    return {
+      stages: ordered.map((stage) => ({
+        stage,
+        total: byStage.get(stage) ?? 0,
+        people: cards
+          .filter((row) => row.stage === stage)
+          .map((row) => ({
+            id: row.id,
+            name: row.name,
+            email: row.email,
+            title: row.title,
+            company: row.company,
+            company_domain: row.company_domain,
+            last_touch: row.last_touch,
+            message_count: row.message_count,
+            meeting_count: row.meeting_count,
+            stage: row.stage,
+          })),
+      })),
+      unstaged: (await first<{ n: number }>(ctx.db, "SELECT COUNT(*) AS n FROM people WHERE stage = ''"))?.n ?? 0,
+    };
+  },
+
+  async set_person_stage(ctx, args) {
+    const person = await personOr404(ctx.db, Number(args.person_id));
+    if (!person) return { error: "person not found" };
+
+    const stage = String(args.stage ?? "").trim();
+    if (stage && !(PIPELINE_STAGES as readonly string[]).includes(stage)) {
+      return { error: `unknown stage "${stage}" — use one of: ${PIPELINE_STAGES.join(", ")}` };
+    }
+
+    await run(ctx.db, "UPDATE people SET stage = ?, updated_at = ? WHERE id = ?", stage, ctx.now, person.id);
+    return {
+      person_id: person.id,
+      name: person.name || person.email,
+      stage: stage || null,
+      note: stage ? `Moved to ${stage}.` : "Removed from the pipeline.",
+    };
   },
 
   /**
