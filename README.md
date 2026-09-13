@@ -3,6 +3,7 @@
 **One graph of the people you actually talk to — and an agent API on top of it.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Demo](https://img.shields.io/badge/demo-2%3A26%20walkthrough-FF5C5C.svg)](https://www.loom.com/share/2bcc0b3f99e24ecb91c35d4a5410aea7)
 [![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-6E56CF.svg)](./AGENTS.md)
 [![Tools](https://img.shields.io/badge/tools-17%20from%20one%20contract-6E56CF.svg)](./packages/core/src/tools.ts)
 [![Tests](https://img.shields.io/badge/e2e-80%20checks%20against%20production-2E7D32.svg)](./tests/e2e.mjs)
@@ -19,6 +20,11 @@ and a CLI generated from a single tool contract.
 Humans get a calm surface for the two jobs that actually need a human: *deciding what's true*
 and *deciding who to reach out to*.
 
+![Ask — a conversation with the graph: a streamed answer, the sources it drew on, and the caveat it volunteered](screenshots/03-ask-answer.png)
+
+*Ask answers from the record, shows what it drew on, and says plainly what the record does not —
+including which sources have gone quiet.*
+
 ## Demo
 
 [![Watch the walkthrough on Loom — Sync Your Contacts and Conversation Pipelines](./assets/demo-walkthrough.jpg)](https://www.loom.com/share/2bcc0b3f99e24ecb91c35d4a5410aea7)
@@ -32,6 +38,34 @@ The demo shows, in one take: sign in → **Ask** answers a question about the gr
 streaming, cites what it drew on and refuses what the record does not say → a profile pinned
 into Ask → **Connections** showing which sources are fresh, which have stopped, and every push
 that ever landed.
+
+## Screenshots
+
+Every shot below is the real app on a real graph — no mockups, and nothing personal in frame.
+
+**Today — what needs you now.** Live counts, and the sources that have gone quiet, named.
+
+![Today: counts for people, facts to review, reconnect-ready, messages, meetings, agent calls — plus a banner naming the stale sources](screenshots/01-today.png)
+
+**Connections — sign in to your own sources.** One row per toolkit, as many accounts as you like,
+each enabled or parked on its own line. The app never sees a password.
+
+![Connections: Add account, Sync now and per-account toggles for Gmail, Google Calendar and Fathom](screenshots/04-connections-accounts.png)
+
+**Connections — freshness you can argue with.** Counts from the rows, the age of the newest one,
+and the exact command that refreshes each source locally. Gmail is stale *and says by how much*;
+LinkedIn is honest that refreshing means exporting again.
+
+![Source cards with freshness bars, row counts, last-sync pills and copy-ready refresh commands](screenshots/05-connections-freshness.png)
+
+**Ask — starters, not a blank box.** Four questions the graph can actually answer.
+
+![Ask's empty state: what it is grounded on, and four starter questions](screenshots/02-ask.png)
+
+**Agents — one endpoint, every client.** The MCP config for Claude Code, Codex and Cursor, printed
+with your URL and the key you just minted.
+
+![The Agents screen: MCP endpoint and copy-ready client configurations](screenshots/06-agents.png)
 
 ## Contents
 
@@ -48,6 +82,8 @@ that ever landed.
 - [Operations](#operations)
 - [Architecture](#architecture)
 - [Repo layout](#repo-layout)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
 - [Safety and privacy](#safety-and-privacy)
 - [License](#license)
 
@@ -620,6 +656,46 @@ packages/cli        `rel` — talk to the deployed graph from a terminal; stdio 
 skill/              the agent skill bundle (teaches an agent how to use the tools well)
 connectors/         local Python ingest → POST /api/sync
 ```
+
+## Limitations
+
+Told straight, because a demo that hides these is a worse demo:
+
+- **The graph is only as fresh as its last sync.** Gmail, Google Calendar and Fathom can be pulled
+  from the cloud; LinkedIn, Instagram and WhatsApp cannot be live at all — the first two have no
+  API for a personal account, and the third is read from the AIOS desktop app on your machine.
+  The Connections screen shows each source's real age rather than smoothing it over.
+- **WhatsApp needs that local app.** There is no API for a personal WhatsApp account, so that
+  source is whatever the AIOS workspace already ingested.
+- **Ask is read-only, and slow on purpose.** It cannot draft or send anything; writes go through
+  `record_fact` / `propose_outreach` where the evidence law and a human stand in the way. The
+  model behind it is a *reasoning* model, so answers take seconds and sometimes longer.
+- **One graph per deployment.** The first account becomes the owner and sign-up closes; there are
+  no per-user partitions. `ALLOWED_EMAILS` lets specific people in to the *same* graph.
+- **Deduplication is heuristic.** The same human across email, phone and socials is usually
+  resolved, but a person who appears under two unrelated addresses can still arrive as two rows —
+  merge them by hand rather than trusting the heuristic blindly.
+- **Freshness is a 3-day rule.** A source that produced rows yesterday and then died still reads
+  `connected` for two more days. That is deliberate (it avoids flapping) and it is why the dates
+  are always shown.
+- **The demo video predates the account-connecting work** — it shows Connections as a health
+  screen. The screenshots above are current.
+
+## Roadmap
+
+Not built yet, in the order that would matter most:
+
+- **More toolkits the graph can read** — Outlook, Slack, Notion. `apps/api/src/composio.ts` and
+  the account model are already generic; each addition is a catalog entry plus a field mapping.
+- **Finer sync control** — per-account schedules and backfill windows, instead of one daily pass
+  for everything enabled.
+- **A sync you can watch** — the pull runs server-side today and reports counts when it finishes;
+  streaming its progress into the Connections screen is the obvious next step.
+- **Thread management in Ask** — rename, search across conversations, and share one thread with a
+  teammate.
+- **Contradiction surfacing** — the evidence ledger already caps contradicted claims; showing the
+  conflicting observations side by side in the UI would make them actionable.
+- **More official importers** — the social path currently covers LinkedIn and Instagram exports.
 
 ## Safety and privacy
 
