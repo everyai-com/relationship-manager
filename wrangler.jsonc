@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "relationship-manager",
+  "main": "apps/api/src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "apps/web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "relationship-manager",
+      "database_id": "PENDING"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_NAME": "Relationship Manager"
+  }
+}

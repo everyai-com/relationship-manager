@@ -1,0 +1,14 @@
+{
+  "name": "@rel/seed",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/build.ts",
+  "scripts": {
+    "build": "tsx src/build.ts",
+    "extract": "python3 scripts/extract_live.py"
+  },
+  "dependencies": {
+    "@rel/core": "*"
+  }
+}

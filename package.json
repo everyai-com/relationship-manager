@@ -1,0 +1,33 @@
+{
+  "name": "relationship-manager",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent-native relationship manager — one graph of the people you actually talk to, from your own email, WhatsApp, calendar and calls. MCP + REST + CLI from one tool contract.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @rel/web",
+    "build": "npm run build --workspace @rel/web",
+    "predeploy": "npm run build",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create relationship-manager",
+    "db:migrate": "wrangler d1 execute relationship-manager --remote --file apps/api/migrations/0001_init.sql",
+    "seed:build": "tsx packages/seed/src/build.ts",
+    "seed:push": "wrangler d1 execute relationship-manager --remote --file packages/seed/out/seed.sql",
+    "typecheck": "tsc -p tsconfig.base.json --noEmit",
+    "test": "npm run test --workspace @rel/core",
+    "rel": "tsx packages/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.2",
+    "wrangler": "^3.78.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

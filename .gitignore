@@ -1,0 +1,29 @@
+# deps
+node_modules/
+.npm/
+
+# secrets — never commit
+.dev.vars
+.env
+.env.*
+ACCESS.txt
+*.pem
+.wrangler/
+
+# the source material this repo was built from (kept locally, not shipped)
+reference/
+
+# your own addresses, used by the seed builder to keep you out of your own graph
+packages/seed/self-addresses.json
+
+# build output
+dist/
+apps/web/dist/
+packages/seed/out/
+packages/seed/data/live.json
+
+# os / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
