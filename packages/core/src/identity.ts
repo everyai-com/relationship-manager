@@ -30,8 +30,23 @@ export function parseAddress(raw: string): { name: string; email: string } {
   return { name: "", email: normalizeEmail(value) };
 }
 
+/**
+ * Pull the address out of whatever a mail source handed us. Real inboxes contain
+ * `Name <a@b.com>`, `"Name" <a@b.com>`, a bare `a@b.com`, and — often enough to
+ * matter — truncated forms like `Name <a@b.com` with no closing bracket. All of
+ * them must resolve to the same human, or the graph forks.
+ */
 export function normalizeEmail(raw: string): string {
-  return (raw ?? "").trim().toLowerCase().replace(/^<|>$/g, "").replace(/^mailto:/, "");
+  const value = String(raw ?? "").trim();
+  if (!value) return "";
+
+  const angled = value.match(/<([^>\s]*@[^>\s]*)>?/);
+  if (angled?.[1]) return angled[1].trim().toLowerCase();
+
+  const tokens = value.split(/[\s,;<>"']+/).filter((token) => token.includes("@"));
+  if (tokens.length > 0) return tokens[tokens.length - 1]!.trim().toLowerCase().replace(/[.,;:]$/, "");
+
+  return value.toLowerCase().replace(/^mailto:/, "");
 }
 
 /** Digits only — matches how the WhatsApp side stores a number (`919900822910`). */
