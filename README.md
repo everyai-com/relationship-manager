@@ -17,6 +17,35 @@ and a CLI generated from a single tool contract.
 Humans get a calm surface for the two jobs that actually need a human: *deciding what's true*
 and *deciding who to reach out to*.
 
+## Demo
+
+**Two-minute walkthrough:** _TODO — paste the demo video URL here._
+
+**Live app:** https://relationship-manager.everyai-com.workers.dev (sign-up is closed after the
+owner account — the deployment is one person's real relationships, not a demo tenant).
+
+The demo shows, in one take: sign in → **Ask** answers a question about the graph while
+streaming, cites what it drew on and refuses what the record does not say → a profile pinned
+into Ask → **Connections** showing which sources are fresh, which have stopped, and every push
+that ever landed.
+
+## External apps and services
+
+| What | Used for | Where |
+|---|---|---|
+| **Cloudflare Workers + D1** | the API, the UI, and the relationship graph | `wrangler.jsonc`, `apps/api` |
+| **Cloudflare Workers AI** (`@cf/zai-org/glm-5.3-flash`) | grounded answers for Ask, `ask_about_person`, `daily_brief` | `apps/api/src/ai.ts` |
+| **Better Auth** | email + password accounts, sessions in D1 | `apps/api/src/auth-better.ts` |
+| **Composio** | live Fathom / Gmail / Google Calendar pulls | `connectors/rel_sync/providers/composio.py` |
+| **Fathom** | recorded calls (direct API, or through Composio) | `connectors/rel_sync/providers/fathom.py` |
+| **Gmail, Google Calendar, WhatsApp** | message and meeting history, read from the local AIOS workspace | `connectors/rel_sync/providers/aios.py` |
+| **LinkedIn + Instagram official exports** | connections, invitations and DMs (no scraping) | `rel import-linkedin`, `rel import-instagram` |
+| **Revenue Desk CRM export** | the reconnect queue and pipeline seed | `packages/seed` |
+| **MCP clients** (Claude Code, Codex, anything MCP) | agents reading and writing the graph | `/mcp`, `skill/` |
+
+No other third-party services are required to run it: the connectors are Python standard
+library only, and the UI ships with no runtime dependencies beyond React and `lucide-react`.
+
 ---
 
 ## The surfaces
@@ -219,12 +248,18 @@ cookies, no third party in the loop.
 
 ## Testing
 
-Two suites, both runnable:
+Reliability here means the same thing the product means by it: nothing may claim more than the
+rows support. Two suites, both runnable, and the second one runs against the live deployment —
+not a mock, not a staging copy:
 
 ```bash
 npm test                                  # unit: the evidence ledger and identity resolution
 REL_API=… REL_KEY=… REL_PASSWORD=… npm run test:e2e
 ```
+
+Current state: **74 checks passing, 0 failing** against the production deployment, including
+auth and session forgery, key scopes, the evidence law, source freshness, and the Ask
+conversation (that it streams, persists, and refuses to invent).
 
 `tests/e2e.mjs` runs **against a real deployment** — no mocks. It covers auth and session
 forgery, agent key scopes (a read key must be denied on every write tool *and* that denial must
