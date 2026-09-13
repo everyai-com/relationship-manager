@@ -111,3 +111,58 @@ Answer as a well-briefed chief of staff: short, specific, grounded. Cite what yo
 (*"they replied on the LucidWay thread in August"*), name what you do not, and never invent a
 meeting, a number or a commitment. When you recommend reaching out, say why — the signal, not the
 vibe.
+
+## If there is no deployment yet — host one for them
+
+When someone hands you this repository instead of an endpoint, you can stand the whole thing up on
+their own Cloudflare account. Do it in this order, and do not skip the confirmation in step 1.
+
+**1. Ask before spending their account.** This creates a Worker, a D1 database and a Workers AI
+binding on *their* Cloudflare account. Get a yes first.
+
+**2. Check that you can authenticate.** Either they have run `npx wrangler login` once, or they
+give you a scoped token:
+
+```bash
+npx wrangler whoami          # prints the account it would deploy into, or fails
+# headless instead: export CLOUDFLARE_API_TOKEN=… CLOUDFLARE_ACCOUNT_ID=…
+```
+
+Never ask for their password. A token with Workers + D1 + Workers AI permission is enough, and it
+should be theirs to revoke.
+
+**3. Run the one command.** It is idempotent — safe to re-run, and it will not replace an existing
+database or rotate an existing secret:
+
+```bash
+npm run deploy:cloudflare
+```
+
+It finds or creates the D1 database (binding it in `wrangler.jsonc`), sets a generated
+`BETTER_AUTH_SECRET` if none exists, applies migrations, builds the UI, deploys, and prints the
+deployment URL and the `/mcp` endpoint. `COMPOSIO_API_KEY=… npm run deploy:cloudflare` also wires
+the account-connecting features.
+
+**4. Hand the human the two things only they can do.**
+
+- **Create the first account** at the printed URL. It becomes the owner and sign-up closes behind
+  them. You cannot do this for them, and you should not create an account with a password you
+  chose.
+- **Mint your key**: *Agents → New key*. `POST /api/agents` deliberately refuses agent principals,
+  so a human makes the first key; after that you work with it like any other credential.
+
+**5. Then verify before you claim success.** With the key they give you:
+
+```bash
+REL_API=https://<their-worker> REL_KEY=rel_… npm run rel -- about        # counts + model
+REL_API=https://<their-worker> REL_KEY=rel_… npm run rel -- connections  # freshness per source
+```
+
+Or wire the client in one step:
+`REL_API=… REL_KEY=… ./skill/relationship-manager/scripts/rel-setup.sh`
+
+**6. Tell them what is true.** The graph starts **empty** — nothing is seeded or faked. It fills
+from what they connect: the Connections screen (Gmail, Google Calendar, Fathom, several accounts
+each) or the local connectors (`connectors/`, standard-library Python). Until then, `search_people`
+returns nothing and that is the honest answer, not a failure.
+

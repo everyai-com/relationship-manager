@@ -13,6 +13,7 @@
     "build": "npm run build --workspace @rel/web",
     "predeploy": "npm run build",
     "deploy": "npm run db:migrate && wrangler deploy",
+    "deploy:cloudflare": "bash scripts/deploy-cloudflare.sh",
     "db:create": "wrangler d1 create relationship-manager",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",

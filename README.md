@@ -129,6 +129,19 @@ your own `*.workers.dev` URL, with Workers Builds redeploying on every push to y
 It asks for exactly one secret: **`BETTER_AUTH_SECRET`** — signs session cookies.
 `openssl rand -hex 32`.
 
+**Rather your agent did it?** Hand it the repository and say so. The same deployment is one
+idempotent command — it finds or creates the database, generates the session secret, migrates,
+builds and deploys — and it will not replace an existing database or rotate a secret that already
+works:
+
+```bash
+npm run deploy:cloudflare
+```
+
+[`AGENTS.md`](./AGENTS.md#if-there-is-no-deployment-yet--host-one-for-them) carries the full
+playbook for an agent: check the account, ask before spending it, and tell you honestly that the
+graph starts empty.
+
 Then, in order:
 
 1. **Open the app and create the first account.** It becomes the owner, and sign-up closes behind
